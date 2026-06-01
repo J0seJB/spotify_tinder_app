@@ -1,0 +1,25 @@
+spotipy>=2.23.0
+python-dotenv>=1.0.1
+pandas>=2.1.4
+tqdm>=4.66.4
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+
+# IA (Claude API para descripciones de playlists)
+anthropic>=0.30.0
+
+# Letras y emociones (opcional)
+lyricsgenius==3.0.1
+langdetect==1.0.9
+transformers>=4.41.0
+torch>=2.2.0
+
+# Clustering (opcional)
+hdbscan>=0.8.33
+scikit-learn>=1.4.2
+numpy>=1.26.0
+
+# Desarrollo / verificacion
+pytest>=8.0.0
