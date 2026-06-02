@@ -10,11 +10,15 @@ import { API } from "../api";
 const { width: W, height: H } = Dimensions.get("window");
 const SWIPE_THRESHOLD = W * 0.35;
 
-export default function SwipeScreen({ navigation }) {
+export default function SwipeScreen({ route, navigation }) {
+  const routeSeeds = route?.params?.seeds || [];
+  const seedCount = routeSeeds.length;
   const [card, setCard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [remaining, setRemaining] = useState(0);
-  const [approved, setApproved] = useState(0);
+  const [approved, setApproved] = useState(seedCount);
+  const [completion, setCompletion] = useState(null);
+  const [completing, setCompleting] = useState(false);
   const [screenError, setScreenError] = useState("");
   const [connectBusy, setConnectBusy] = useState(false);
   const [connectPlaying, setConnectPlaying] = useState(false);
@@ -92,6 +96,7 @@ export default function SwipeScreen({ navigation }) {
       const cards = res.cards || [];
       setCard(cards[0] || null);
       setRemaining(res.remaining || 0);
+      if (res.completion) setCompletion(res.completion);
     } catch (e) {
       setCard(null);
       setScreenError(e.message || "No se pudieron cargar canciones");
@@ -120,6 +125,7 @@ export default function SwipeScreen({ navigation }) {
         if (typeof feedback.remaining === "number") {
           setRemaining(feedback.remaining);
         }
+        if (feedback.completion) setCompletion(feedback.completion);
         if (isLike) setApproved(a => a + 1);
       } catch (e) {
         setScreenError(e.message || "No se pudo guardar tu seleccion");
@@ -129,6 +135,28 @@ export default function SwipeScreen({ navigation }) {
       await loadNext(false);
       setLoading(false);
     });
+  }
+
+  async function completePlaylist() {
+    if (completing) return;
+    setCompleting(true);
+    setScreenError("");
+    try {
+      const result = await API.completePlaylist(25);
+      setApproved(result.approved_total || approved);
+      navigation.replace("Playlist", {
+        approved: result.approved_total || approved,
+        completed: result.added || 0,
+      });
+    } catch (e) {
+      setScreenError(e.message || "No se pudo completar la playlist");
+    } finally {
+      setCompleting(false);
+    }
+  }
+
+  function addMoreSeeds() {
+    navigation.replace("SearchSeed", { initialSeeds: routeSeeds });
   }
 
   if (loading) {
@@ -141,13 +169,25 @@ export default function SwipeScreen({ navigation }) {
   }
 
   if (!card) {
+    const noSuggestions = !screenError && remaining === 0 && approved <= seedCount;
     return (
       <View style={styles.center}>
-        <Text style={styles.doneEmoji}>Listo</Text>
-        <Text style={styles.doneTitle}>Eso es todo</Text>
-        <Text style={styles.doneSubtitle}>{screenError || `${approved} canciones aprobadas`}</Text>
-        <TouchableOpacity style={styles.btn} onPress={() => navigation.replace("Playlist", { approved })}>
-          <Text style={styles.btnText}>Crear playlist</Text>
+        <Text style={styles.doneEmoji}>{noSuggestions ? "Sin coincidencias" : "Listo"}</Text>
+        <Text style={styles.doneTitle}>
+          {noSuggestions ? "No encontre canciones similares" : "Eso es todo"}
+        </Text>
+        <Text style={styles.doneSubtitle}>
+          {screenError || (noSuggestions
+            ? "Las semillas son validas, pero con las canciones disponibles no hubo coincidencias suficientemente cercanas. Agrega una o dos canciones mas parecidas para ampliar el perfil."
+            : `${approved} canciones aprobadas`)}
+        </Text>
+        {noSuggestions ? (
+          <TouchableOpacity style={[styles.btn, styles.secondaryBtn]} onPress={addMoreSeeds}>
+            <Text style={styles.secondaryBtnText}>Agregar mas semillas</Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity style={[styles.btn, noSuggestions && styles.quietBtn]} onPress={() => navigation.replace("Playlist", { approved })}>
+          <Text style={[styles.btnText, noSuggestions && styles.quietBtnText]}>Crear playlist</Text>
         </TouchableOpacity>
       </View>
     );
@@ -171,6 +211,18 @@ export default function SwipeScreen({ navigation }) {
           <TouchableOpacity onPress={() => navigation.replace("Playlist", { approved })}>
             <Text style={styles.headerLink}>Crear playlist ({approved})</Text>
           </TouchableOpacity>
+          {completion?.can_complete ? (
+            <TouchableOpacity
+              style={[styles.completeHeaderBtn, completing && styles.completeHeaderBtnDisabled]}
+              onPress={completePlaylist}
+              disabled={completing}
+            >
+              {completing
+                ? <ActivityIndicator size="small" color="#000" />
+                : <Text style={styles.completeHeaderText}>Completar</Text>
+              }
+            </TouchableOpacity>
+          ) : null}
           <Text style={styles.headerCount}>{remaining} restantes</Text>
         </View>
 
@@ -257,6 +309,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     alignSelf: "center",
     width: "100%",
     maxWidth: Platform.OS === "web" ? 920 : undefined,
@@ -265,6 +318,17 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   headerLink: { color: "#1DB954", fontSize: 14, fontWeight: "700" },
+  completeHeaderBtn: {
+    backgroundColor: "#1DB954",
+    borderRadius: 999,
+    minWidth: 104,
+    minHeight: 36,
+    paddingHorizontal: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  completeHeaderBtnDisabled: { opacity: 0.7 },
+  completeHeaderText: { color: "#000", fontSize: 13, fontWeight: "900" },
   headerCount: { color: "#777", fontSize: 14 },
   screenError: { color: "#ff9aa7", textAlign: "center", paddingHorizontal: 20, marginTop: 4 },
   cardArea: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: Platform.OS === "web" ? 560 : undefined },
@@ -331,5 +395,9 @@ const styles = StyleSheet.create({
   doneTitle: { fontSize: 28, fontWeight: "800", color: "#fff" },
   doneSubtitle: { fontSize: 16, color: "#888", marginTop: 8, marginBottom: 32, textAlign: "center" },
   btn: { backgroundColor: "#1DB954", borderRadius: 14, paddingHorizontal: 32, paddingVertical: 16 },
+  secondaryBtn: { marginBottom: 12, minWidth: 220, alignItems: "center" },
+  secondaryBtnText: { color: "#000", fontSize: 16, fontWeight: "800" },
+  quietBtn: { backgroundColor: "#1a1a1a", borderWidth: 1, borderColor: "#333", minWidth: 220, alignItems: "center" },
+  quietBtnText: { color: "#aaa" },
   btnText: { color: "#000", fontSize: 16, fontWeight: "800" }
 });

@@ -5,7 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { API } from "../api";
 
 export default function PlaylistScreen({ route, navigation }) {
-  const { approved = 0 } = route.params || {};
+  const { approved = 0, completed = 0 } = route.params || {};
   const [name, setName] = useState("Mi playlist IA");
   const [isPublic, setIsPublic] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -49,6 +49,11 @@ export default function PlaylistScreen({ route, navigation }) {
       <View style={styles.content}>
         <Text style={styles.title}>Guardar playlist</Text>
         <Text style={styles.subtitle}>{approved} canciones seleccionadas</Text>
+        {completed > 0 ? (
+          <Text style={styles.completeNote}>
+            Se agregaron {completed} canciones recomendadas antes de guardar.
+          </Text>
+        ) : null}
 
         <Text style={styles.label}>Nombre</Text>
         <TextInput
@@ -102,6 +107,13 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 32 },
   title: { fontSize: Platform.OS === "web" ? 34 : 28, fontWeight: "800", color: "#fff", marginBottom: 4 },
   subtitle: { fontSize: 15, color: "#888", marginBottom: 32 },
+  completeNote: {
+    color: "#1DB954",
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: -20,
+    marginBottom: 28,
+  },
   label: { color: "#aaa", fontSize: 13, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 },
   input: {
     backgroundColor: "#1a1a1a", borderRadius: 12, padding: 16,

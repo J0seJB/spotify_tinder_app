@@ -39,6 +39,9 @@ class CreatePlaylistRequest(BaseModel):
     name: str
     public: bool = False
 
+class CompletePlaylistRequest(BaseModel):
+    target_total: int = 25
+
 class PlayerPlayRequest(BaseModel):
     track_id: Optional[str] = None
     uri: Optional[str] = None
@@ -113,6 +116,17 @@ def _rescore(suggestions):
     rescored.sort(key=lambda x: -x[1])
     return rescored
 
+def _complete_state() -> Dict[str, Any]:
+    remaining = len(_rescore(_cache["suggestions"])) if _cache["suggestions"] else 0
+    selected = len(_cache["final_approved"])
+    enough_signal = selected >= 5
+    return {
+        "can_complete": bool(enough_signal and remaining > 0),
+        "selected": selected,
+        "remaining": remaining,
+        "min_selected": 5,
+    }
+
 def _get_track_details(tid: str):
     meta = _cache["track_meta"].get(tid, {})
     return {
@@ -178,11 +192,13 @@ def root():
 
 @app.get("/status")
 def status():
+    completion = _complete_state()
     return {
         "loaded": _cache["loaded"],
         "total_tracks": len(_cache["all_liked_ids"]),
         "seeds": len(_cache["seed_ids"]),
         "approved": len(_cache["final_approved"]),
+        "completion": completion,
     }
 
 @app.get("/player/devices")
@@ -322,7 +338,10 @@ def get_next_batch(count: int = 1):
             "uri": meta.get("uri") or details["uri"],
             "external_url": details["external_url"],
         })
-    return {"cards": cards, "remaining": max(0, len(pool) - len(batch))}
+    completion = _complete_state()
+    completion["remaining"] = max(0, len(pool) - len(batch))
+    completion["can_complete"] = bool(completion["selected"] >= completion["min_selected"] and completion["remaining"] > 0)
+    return {"cards": cards, "remaining": completion["remaining"], "completion": completion}
 
 @app.post("/feedback")
 def submit_feedback(req: FeedbackRequest):
@@ -341,10 +360,57 @@ def submit_feedback(req: FeedbackRequest):
         "ok": True,
         "approved_total": len(_cache["final_approved"]),
         "remaining": remaining,
+        "completion": _complete_state(),
         "learning": {
             "likes": [s for s, _ in top_liked],
             "dislikes": [s for s, _ in top_avoid],
         }
+    }
+
+@app.post("/complete-playlist")
+def complete_playlist(req: CompletePlaylistRequest):
+    if not _cache["suggestions"]:
+        raise HTTPException(status_code=400, detail="No hay sugerencias para completar")
+
+    target_total = max(1, min(int(req.target_total or 25), 100))
+    current_total = len(_cache["final_approved"])
+    state = _complete_state()
+    if not state["can_complete"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Necesitas al menos {state['min_selected']} canciones seleccionadas y sugerencias restantes",
+        )
+    if current_total >= target_total:
+        return {
+            "ok": True,
+            "added": 0,
+            "approved_total": current_total,
+            "target_total": target_total,
+            "remaining": state["remaining"],
+        }
+
+    needed = target_total - current_total
+    selected = []
+    for tid, _score, _meta in _rescore(_cache["suggestions"]):
+        if tid in _cache["final_approved"]:
+            continue
+        selected.append(tid)
+        if len(selected) >= needed:
+            break
+
+    for tid in selected:
+        _cache["approved_ids"].add(tid)
+        _cache["shown_ids"].add(tid)
+        _cache["final_approved"].append(tid)
+    if selected:
+        _update_signals(selected, 0.8, _cache["approved_signals"])
+
+    return {
+        "ok": True,
+        "added": len(selected),
+        "approved_total": len(_cache["final_approved"]),
+        "target_total": target_total,
+        "remaining": len(_rescore(_cache["suggestions"])),
     }
 
 @app.post("/create-playlist")

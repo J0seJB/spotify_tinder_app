@@ -6,10 +6,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { API } from "../api";
 
-export default function SearchSeedScreen({ navigation }) {
+export default function SearchSeedScreen({ route, navigation }) {
+  const initialSeeds = route?.params?.initialSeeds || [];
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
-  const [seeds, setSeeds] = useState([]);
+  const [seeds, setSeeds] = useState(initialSeeds);
   const [searchError, setSearchError] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
 

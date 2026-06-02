@@ -79,6 +79,14 @@ export const API = {
     });
     return parseResponse(r, "No se pudo crear la playlist");
   },
+  async completePlaylist(targetTotal = 25) {
+    const r = await fetch(`${BASE_URL}/complete-playlist`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_total: targetTotal }),
+    });
+    return parseResponse(r, "No se pudo completar la playlist");
+  },
   async reset() {
     const r = await fetch(`${BASE_URL}/reset`, { method: "DELETE" });
     return parseResponse(r, "No se pudo reiniciar la sesion");

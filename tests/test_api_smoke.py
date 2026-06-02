@@ -124,3 +124,70 @@ def test_feedback_reports_remaining_after_learning():
     finally:
         _cache.clear()
         _cache.update(original)
+
+
+def test_complete_playlist_adds_best_remaining_tracks():
+    original = _cache.copy()
+    try:
+        _cache.update({
+            "track_meta": {
+                "seed-1": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-1"},
+                "seed-2": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-2"},
+                "seed-3": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-3"},
+                "seed-4": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-4"},
+                "seed-5": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-5"},
+                "track-1": {"artist_ids": ["artist-1"], "uri": "spotify:track:track-1"},
+                "track-2": {"artist_ids": ["artist-2"], "uri": "spotify:track:track-2"},
+            },
+            "artists_by_id": {
+                "artist-1": {"name": "Artist", "genres": ["rock"]},
+                "artist-2": {"name": "Other", "genres": ["pop"]},
+            },
+            "suggestions": [
+                ("track-2", 0.6, {"name": "Two", "artists": "Other"}),
+                ("track-1", 0.9, {"name": "One", "artists": "Artist"}),
+            ],
+            "shown_ids": {"seed-1", "seed-2", "seed-3", "seed-4", "seed-5"},
+            "approved_ids": {"seed-1", "seed-2", "seed-3", "seed-4", "seed-5"},
+            "approved_signals": {"rock": 5.0, "artist": 5.0},
+            "rejected_signals": {},
+            "final_approved": ["seed-1", "seed-2", "seed-3", "seed-4", "seed-5"],
+        })
+
+        response = client.post("/complete-playlist", json={"target_total": 6})
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["added"] == 1
+        assert payload["approved_total"] == 6
+        assert _cache["final_approved"][-1] == "track-1"
+        assert "track-1" in _cache["shown_ids"]
+    finally:
+        _cache.clear()
+        _cache.update(original)
+
+
+def test_complete_playlist_requires_enough_selected_tracks():
+    original = _cache.copy()
+    try:
+        _cache.update({
+            "track_meta": {
+                "seed-1": {"artist_ids": [], "uri": "spotify:track:seed-1"},
+                "track-1": {"artist_ids": [], "uri": "spotify:track:track-1"},
+            },
+            "artists_by_id": {},
+            "suggestions": [("track-1", 0.9, {"name": "One", "artists": "A"})],
+            "shown_ids": {"seed-1"},
+            "approved_ids": {"seed-1"},
+            "approved_signals": {},
+            "rejected_signals": {},
+            "final_approved": ["seed-1"],
+        })
+
+        response = client.post("/complete-playlist", json={"target_total": 10})
+
+        assert response.status_code == 400
+        assert "Necesitas al menos 5" in response.json()["detail"]
+    finally:
+        _cache.clear()
+        _cache.update(original)
