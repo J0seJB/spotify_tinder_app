@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 import pandas as pd
 from dotenv import load_dotenv
 
-from spotify_client import get_user_client, ensure_playlist, add_tracks_in_chunks
+from spotify_client import get_user_client, ensure_playlist, add_tracks_in_chunks, clear_playlist
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ def main():
             pl_name = f"{args.prefix + ' - ' if args.prefix else ''}{name}"
             pid = ensure_playlist(sp, uid, pl_name, args.public)
             uris = [u for u in sub["uri"].dropna().tolist() if u]
-            sp.playlist_replace_items(pid, [])
+            clear_playlist(sp, pid)
             add_tracks_in_chunks(sp, pid, uris)
             print(f"  OK Creada: {pl_name} ({len(uris)} canciones)")
 

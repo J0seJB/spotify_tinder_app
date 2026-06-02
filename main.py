@@ -15,6 +15,7 @@ from spotify_client import (
     fetch_all_liked,
     get_artists_info, ensure_playlist,
     get_playlist_track_uris, add_tracks_in_chunks,
+    clear_playlist,
 )
 from utils import CATEGORY_PROFILES, score_categories, pick_categories_multi
 from dynamic_categories import (
@@ -411,7 +412,7 @@ def main():
                 playlist_name = f"{prefix} - {cat['name']}"
                 pid = ensure_playlist(sp_user, user_id, playlist_name, public)
                 if args.force_replace:
-                    sp_user.playlist_replace_items(pid, [])
+                    clear_playlist(sp_user, pid)
                 existing = get_playlist_track_uris(sp_user, pid) if not args.force_replace else set()
                 uris = [u for u in sub["uri"].dropna().tolist() if u]
                 to_add = [u for u in uris if u not in existing]
@@ -478,7 +479,7 @@ def main():
             playlist_name = f"{prefix} - {cat}"
             pid = ensure_playlist(sp_user, user_id, playlist_name, public)
             if args.force_replace:
-                sp_user.playlist_replace_items(pid, [])
+                clear_playlist(sp_user, pid)
             existing = get_playlist_track_uris(sp_user, pid) if not args.force_replace else set()
             uris = [r["uri"] for r in rows if r.get("uri")]
             to_add = [u for u in uris if u and u not in existing]

@@ -35,6 +35,38 @@ GENIUS_TOKEN=...
 
 Importante: si tus credenciales de Spotify fueron compartidas o subidas por error, regenerarlas en el dashboard de Spotify.
 
+## Testers y cambios Spotify 2026
+
+Si la app esta en **Development Mode**, Spotify requiere:
+
+- El dueno de la app debe tener Spotify Premium activo.
+- Maximo 5 usuarios autorizados por app en Development Mode.
+- Cada tester debe estar agregado en el allowlist del Developer Dashboard.
+- Cada tester debe autorizar la app con su propia cuenta de Spotify.
+
+Pasos para agregar testers:
+
+1. Abre el [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
+2. Entra a tu app.
+3. Ve a **Settings** -> **Users Management**.
+4. Agrega el nombre y correo de Spotify de cada tester.
+5. Confirma que `SPOTIFY_REDIRECT_URI` coincide exactamente con un Redirect URI configurado en la app.
+
+Compatibilidad aplicada para febrero 2026:
+
+- La app ya no usa el endpoint batch `GET /artists?ids=...`; ahora consulta artistas individualmente.
+- La creacion de playlists usa `POST /me/playlists` via `current_user_playlist_create`.
+- La gestion de playlists usa `/playlists/{id}/items`.
+- `audio_features` queda apagado por defecto porque Spotify lo marco como legacy/deprecado para muchos casos. La app usa Last.fm/Genius como senales principales.
+
+Para reactivar `audio_features` solo si tu app aun tiene acceso:
+
+```env
+SPOTIFY_ENABLE_AUDIO_FEATURES=true
+```
+
+Nota: el backend actual sigue siendo de sesion unica/local. Para que varios testers usen la misma instancia al mismo tiempo, hay que implementar OAuth multiusuario con sesiones por usuario.
+
 ## Ejecutar backend
 
 ```bash

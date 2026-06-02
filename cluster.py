@@ -12,7 +12,7 @@ except Exception:
     HAS_HDBSCAN = False
 
 import spotipy
-from spotify_client import get_user_client, ensure_playlist, add_tracks_in_chunks
+from spotify_client import get_user_client, ensure_playlist, add_tracks_in_chunks, clear_playlist
 from dotenv import load_dotenv
 
 SCOPES = ["playlist-modify-public","playlist-modify-private","user-library-read"]
@@ -81,7 +81,7 @@ def main():
         name = f"{args.prefix} - #{int(cl)}"
         pid = ensure_playlist(sp, uid, name, args.public)
         uris = [u for u in sub["uri"].dropna().tolist() if u]
-        sp.playlist_replace_items(pid, [])
+        clear_playlist(sp, pid)
         add_tracks_in_chunks(sp, pid, uris)
         print(f"OK Playlist cluster creada: {name} ({len(uris)} temas)")
 
