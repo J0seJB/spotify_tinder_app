@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, Image, TouchableOpacity,
-  Animated, PanResponder, Dimensions, ActivityIndicator
+  Animated, PanResponder, Dimensions, ActivityIndicator, Platform
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -237,8 +237,8 @@ export default function SwipeScreen({ navigation }) {
   );
 }
 
-const CARD_W = W - 32;
-const CARD_H = H * 0.62;
+const CARD_W = Platform.OS === "web" ? Math.min(520, Math.max(360, W * 0.36)) : W - 32;
+const CARD_H = Platform.OS === "web" ? Math.min(700, Math.max(520, H * 0.74)) : H * 0.62;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0a0a0a" },
@@ -254,18 +254,26 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.6)",
   },
   center: { flex: 1, backgroundColor: "#0a0a0a", justifyContent: "center", alignItems: "center", padding: 32 },
-  header: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignSelf: "center",
+    width: "100%",
+    maxWidth: Platform.OS === "web" ? 920 : undefined,
+    paddingHorizontal: Platform.OS === "web" ? 32 : 20,
+    paddingTop: Platform.OS === "web" ? 24 : 12,
+    paddingBottom: 8,
+  },
   headerLink: { color: "#1DB954", fontSize: 14, fontWeight: "700" },
   headerCount: { color: "#777", fontSize: 14 },
   screenError: { color: "#ff9aa7", textAlign: "center", paddingHorizontal: 20, marginTop: 4 },
-  cardArea: { flex: 1, alignItems: "center", justifyContent: "center" },
+  cardArea: { flex: 1, alignItems: "center", justifyContent: "center", minHeight: Platform.OS === "web" ? 560 : undefined },
   card: {
     position: "absolute", width: CARD_W, height: CARD_H,
     borderRadius: 24, overflow: "hidden",
     shadowColor: "#000", shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.5, shadowRadius: 16, elevation: 12,
   },
-  cardBack: { transform: [{ scale: 0.95 }], zIndex: 0 },
   cardImage: { width: "100%", height: "100%", backgroundColor: "#1a1a1a" },
   noImage: { justifyContent: "center", alignItems: "center" },
   noImageText: { fontSize: 34, fontWeight: "900", color: "#333" },
@@ -312,7 +320,7 @@ const styles = StyleSheet.create({
   badgeLike: { left: 20, borderColor: "#1DB954", transform: [{ rotate: "-15deg" }] },
   badgeNope: { right: 20, borderColor: "#ff4458", transform: [{ rotate: "15deg" }] },
   badgeText: { fontSize: 28, fontWeight: "900", color: "#fff" },
-  buttons: { flexDirection: "row", justifyContent: "center", gap: 32, paddingBottom: 32, paddingTop: 16 },
+  buttons: { flexDirection: "row", justifyContent: "center", gap: 32, paddingBottom: Platform.OS === "web" ? 40 : 32, paddingTop: 16 },
   circleBtn: { width: 68, height: 68, borderRadius: 34, justifyContent: "center", alignItems: "center", elevation: 6 },
   nopeBtn: { backgroundColor: "#1a1a1a", borderWidth: 2, borderColor: "#ff4458" },
   nopeBtnText: { fontSize: 18, fontWeight: "900", color: "#ff4458" },

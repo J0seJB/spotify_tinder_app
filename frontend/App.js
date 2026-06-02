@@ -39,12 +39,11 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: "#050505",
-    alignItems: Platform.OS === "web" ? "center" : "stretch",
   },
   shell: {
     flex: 1,
     width: "100%",
-    maxWidth: Platform.OS === "web" ? 520 : undefined,
+    minHeight: Platform.OS === "web" ? "100vh" : undefined,
     backgroundColor: "#0a0a0a",
   },
 });

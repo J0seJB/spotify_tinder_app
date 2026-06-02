@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { API } from "../api";
@@ -46,49 +46,61 @@ export default function PlaylistScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Guardar playlist</Text>
-      <Text style={styles.subtitle}>{approved} canciones seleccionadas</Text>
+      <View style={styles.content}>
+        <Text style={styles.title}>Guardar playlist</Text>
+        <Text style={styles.subtitle}>{approved} canciones seleccionadas</Text>
 
-      <Text style={styles.label}>Nombre</Text>
-      <TextInput
-        style={styles.input}
-        value={name}
-        onChangeText={setName}
-        placeholderTextColor="#555"
-        maxLength={60}
-      />
+        <Text style={styles.label}>Nombre</Text>
+        <TextInput
+          style={styles.input}
+          value={name}
+          onChangeText={setName}
+          placeholderTextColor="#555"
+          maxLength={60}
+        />
 
-      <TouchableOpacity style={styles.toggleRow} onPress={() => setIsPublic(!isPublic)}>
-        <View style={[styles.toggle, isPublic && styles.toggleOn]}>
-          <View style={[styles.toggleThumb, isPublic && styles.toggleThumbOn]} />
-        </View>
-        <Text style={styles.toggleLabel}>{isPublic ? "Publica" : "Privada"}</Text>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.toggleRow} onPress={() => setIsPublic(!isPublic)}>
+          <View style={[styles.toggle, isPublic && styles.toggleOn]}>
+            <View style={[styles.toggleThumb, isPublic && styles.toggleThumbOn]} />
+          </View>
+          <Text style={styles.toggleLabel}>{isPublic ? "Publica" : "Privada"}</Text>
+        </TouchableOpacity>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <TouchableOpacity
-        style={[styles.btn, creating && styles.btnDisabled]}
-        onPress={create}
-        disabled={creating}
-      >
-        {creating
-          ? <ActivityIndicator color="#000" />
-          : <Text style={styles.btnText}>Crear en Spotify</Text>
-        }
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.btn, creating && styles.btnDisabled]}
+          onPress={create}
+          disabled={creating}
+        >
+          {creating
+            ? <ActivityIndicator color="#000" />
+            : <Text style={styles.btnText}>Crear en Spotify</Text>
+          }
+        </TouchableOpacity>
 
-      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-        <Text style={styles.backBtnText}>Seguir swipeando</Text>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <Text style={styles.backBtnText}>Seguir swipeando</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a", padding: 24 },
+  container: {
+    flex: 1,
+    backgroundColor: "#0a0a0a",
+    padding: Platform.OS === "web" ? 40 : 24,
+    alignItems: Platform.OS === "web" ? "center" : "stretch",
+  },
+  content: {
+    width: "100%",
+    maxWidth: Platform.OS === "web" ? 620 : undefined,
+    marginTop: Platform.OS === "web" ? 60 : 0,
+  },
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 32 },
-  title: { fontSize: 28, fontWeight: "800", color: "#fff", marginBottom: 4 },
+  title: { fontSize: Platform.OS === "web" ? 34 : 28, fontWeight: "800", color: "#fff", marginBottom: 4 },
   subtitle: { fontSize: 15, color: "#888", marginBottom: 32 },
   label: { color: "#aaa", fontSize: 13, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 },
   input: {

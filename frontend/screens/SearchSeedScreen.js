@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
-  StyleSheet, ActivityIndicator
+  StyleSheet, ActivityIndicator, Platform
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { API } from "../api";
@@ -53,70 +53,82 @@ export default function SearchSeedScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Elige tus semillas</Text>
-      <Text style={styles.subtitle}>Canciones que definen el vibe de tu playlist</Text>
+      <View style={styles.content}>
+        <Text style={styles.title}>Elige tus semillas</Text>
+        <Text style={styles.subtitle}>Canciones que definen el vibe de tu playlist</Text>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Busca una cancion o artista..."
-        placeholderTextColor="#555"
-        value={query}
-        onChangeText={search}
-      />
+        <TextInput
+          style={styles.input}
+          placeholder="Busca una cancion o artista..."
+          placeholderTextColor="#555"
+          value={query}
+          onChangeText={search}
+        />
 
-      {searchError ? <Text style={styles.error}>{searchError}</Text> : null}
+        {searchError ? <Text style={styles.error}>{searchError}</Text> : null}
 
-      {seeds.length > 0 && (
-        <View style={styles.seedsRow}>
-          {seeds.map(s => (
-            <TouchableOpacity key={s.id} onPress={() => toggleSeed(s)} style={styles.seedChip}>
-              <Text style={styles.seedChipText} numberOfLines={1}>{s.name}</Text>
-              <Text style={styles.seedChipX}>x</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
+        {seeds.length > 0 && (
+          <View style={styles.seedsRow}>
+            {seeds.map(s => (
+              <TouchableOpacity key={s.id} onPress={() => toggleSeed(s)} style={styles.seedChip}>
+                <Text style={styles.seedChipText} numberOfLines={1}>{s.name}</Text>
+                <Text style={styles.seedChipX}>x</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
-      <FlatList
-        data={results}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => {
-          const selected = seeds.find(s => s.id === item.id);
-          return (
-            <TouchableOpacity
-              style={[styles.result, selected && styles.resultSelected]}
-              onPress={() => toggleSeed(item)}
-            >
-              <View style={styles.resultLeft}>
-                <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
-                <Text style={styles.resultArtist} numberOfLines={1}>{item.artists}</Text>
-              </View>
-              {selected && <Text style={styles.checkmark}>OK</Text>}
-            </TouchableOpacity>
-          );
-        }}
-        style={styles.list}
-      />
+        <FlatList
+          data={results}
+          keyExtractor={item => item.id}
+          renderItem={({ item }) => {
+            const selected = seeds.find(s => s.id === item.id);
+            return (
+              <TouchableOpacity
+                style={[styles.result, selected && styles.resultSelected]}
+                onPress={() => toggleSeed(item)}
+              >
+                <View style={styles.resultLeft}>
+                  <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={styles.resultArtist} numberOfLines={1}>{item.artists}</Text>
+                </View>
+                {selected && <Text style={styles.checkmark}>OK</Text>}
+              </TouchableOpacity>
+            );
+          }}
+          style={styles.list}
+        />
 
-      {seeds.length > 0 && (
-        <TouchableOpacity
-          style={[styles.btn, analyzing && styles.btnDisabled]}
-          onPress={startSwiping}
-          disabled={analyzing}
-        >
-          {analyzing
-            ? <ActivityIndicator color="#000" />
-            : <Text style={styles.btnText}>Analizar y empezar</Text>
-          }
-        </TouchableOpacity>
-      )}
+        {seeds.length > 0 && (
+          <TouchableOpacity
+            style={[styles.btn, analyzing && styles.btnDisabled]}
+            onPress={startSwiping}
+            disabled={analyzing}
+          >
+            {analyzing
+              ? <ActivityIndicator color="#000" />
+              : <Text style={styles.btnText}>Analizar y empezar</Text>
+            }
+          </TouchableOpacity>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0a0a0a", paddingHorizontal: 20 },
-  title: { fontSize: 26, fontWeight: "800", color: "#fff", marginTop: 20 },
+  container: {
+    flex: 1,
+    backgroundColor: "#0a0a0a",
+    paddingHorizontal: Platform.OS === "web" ? 40 : 20,
+    alignItems: Platform.OS === "web" ? "center" : "stretch",
+  },
+  content: {
+    flex: 1,
+    width: "100%",
+    maxWidth: Platform.OS === "web" ? 760 : undefined,
+  },
+  title: { fontSize: Platform.OS === "web" ? 34 : 26, fontWeight: "800", color: "#fff", marginTop: Platform.OS === "web" ? 44 : 20 },
   subtitle: { fontSize: 14, color: "#666", marginBottom: 20 },
   input: {
     backgroundColor: "#1a1a1a", borderRadius: 12, padding: 14,
