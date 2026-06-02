@@ -61,16 +61,21 @@ def test_load_does_not_block_on_artist_genre_fetch(monkeypatch):
 def test_next_uses_actual_batch_size_for_remaining(monkeypatch):
     original = _cache.copy()
     try:
-        monkeypatch.setattr("api._get_track_details", lambda _: {
-            "image_url": None,
-            "preview_url": None,
-            "album_name": "",
-            "external_url": None,
-            "uri": "",
-        })
+        monkeypatch.setattr("api._get_sp", lambda: (_ for _ in ()).throw(AssertionError("should not fetch Spotify track details")))
         _cache.update({
             "sp_user": None,
-            "track_meta": {"track-1": {"artist_ids": [], "uri": "spotify:track:track-1", "name": "One", "artists": "A"}},
+            "track_meta": {
+                "track-1": {
+                    "artist_ids": [],
+                    "uri": "spotify:track:track-1",
+                    "name": "One",
+                    "artists": "A",
+                    "album_name": "Album",
+                    "image_url": "https://example.com/cover.jpg",
+                    "preview_url": None,
+                    "external_url": "https://open.spotify.com/track/track-1",
+                }
+            },
             "artists_by_id": {},
             "suggestions": [("track-1", 0.9, {"name": "One", "artists": "A", "uri": "spotify:track:track-1"})],
             "shown_ids": set(),
@@ -82,7 +87,10 @@ def test_next_uses_actual_batch_size_for_remaining(monkeypatch):
         response = client.get("/next?count=3")
 
         assert response.status_code == 200
-        assert response.json()["remaining"] == 0
+        payload = response.json()
+        assert payload["remaining"] == 0
+        assert payload["cards"][0]["album"] == "Album"
+        assert payload["cards"][0]["image_url"] == "https://example.com/cover.jpg"
     finally:
         _cache.clear()
         _cache.update(original)

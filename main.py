@@ -50,6 +50,10 @@ def build_track_meta(liked_items, artists_by_id):
             "artists": "; ".join(artist_names),
             "artist_ids": artist_ids,
             "genres": genres,
+            "album_name": tr.get("album", {}).get("name", ""),
+            "image_url": ((tr.get("album", {}).get("images") or [{}])[0] or {}).get("url"),
+            "preview_url": tr.get("preview_url"),
+            "external_url": tr.get("external_urls", {}).get("spotify"),
         }
     return meta
 

@@ -114,19 +114,14 @@ def _rescore(suggestions):
     return rescored
 
 def _get_track_details(tid: str):
-    try:
-        sp = _get_sp()
-        track = sp.track(tid)
-        images = track.get("album", {}).get("images", [])
-        return {
-            "image_url": images[0]["url"] if images else None,
-            "preview_url": track.get("preview_url"),
-            "album_name": track.get("album", {}).get("name", ""),
-            "external_url": track.get("external_urls", {}).get("spotify"),
-            "uri": track.get("uri", ""),
-        }
-    except Exception:
-        return {"image_url": None, "preview_url": None, "album_name": "", "external_url": None, "uri": ""}
+    meta = _cache["track_meta"].get(tid, {})
+    return {
+        "image_url": meta.get("image_url"),
+        "preview_url": meta.get("preview_url"),
+        "album_name": meta.get("album_name", ""),
+        "external_url": meta.get("external_url"),
+        "uri": meta.get("uri", ""),
+    }
 
 def _spotify_http_exception(exc: SpotifyException) -> HTTPException:
     status = getattr(exc, "http_status", None) or 502
