@@ -17,6 +17,23 @@ logger = logging.getLogger(__name__)
 
 FEATURE_KEYS = ["energy", "valence", "danceability", "acousticness", "instrumentalness"]
 
+GENRE_FAMILY_KEYWORDS = {
+    "rock": ("rock", "grunge", "alternative", "punk", "emo", "shoegaze", "new wave"),
+    "metal": ("metal", "hardcore", "nu metal", "heavy"),
+    "latin_urban": ("reggaeton", "urbano", "latin trap", "trap latino", "dembow", "perreo"),
+    "hiphop": ("hip hop", "rap", "trap", "drill", "r&b", "rnb"),
+    "pop": ("pop", "synthpop", "dance pop", "indie pop"),
+    "electronic": ("house", "techno", "edm", "electronic", "electronica", "dance", "trance", "dubstep"),
+    "folk": ("folk", "singer-songwriter", "country", "americana"),
+    "jazz": ("jazz", "soul", "blues", "funk"),
+    "classical": ("classical", "orchestra", "piano", "instrumental"),
+}
+
+GENERIC_LASTFM_TAGS = {
+    "seen live", "favorite", "favorites", "favourite", "favourites", "spotify",
+    "male vocalists", "female vocalists", "beautiful", "awesome", "catchy",
+}
+
 
 # -----------------------------------------
 # Utilidades de similitud
@@ -35,6 +52,24 @@ def _genre_overlap(seed_genres: set, candidate_genres: set) -> float:
     intersection = len(seed_genres & candidate_genres)
     union = len(seed_genres | candidate_genres)
     return intersection / union if union else 0.0
+
+
+def _families_for_terms(terms: List[str] | set[str]) -> set[str]:
+    families: set[str] = set()
+    for term in terms:
+        tl = (term or "").lower()
+        for family, keywords in GENRE_FAMILY_KEYWORDS.items():
+            if any(keyword in tl for keyword in keywords):
+                families.add(family)
+    return families
+
+
+def _tag_overlap(seed_tags: set[str], candidate_tags: set[str]) -> float:
+    seed_clean = {t for t in seed_tags if t and t not in GENERIC_LASTFM_TAGS}
+    cand_clean = {t for t in candidate_tags if t and t not in GENERIC_LASTFM_TAGS}
+    if not seed_clean or not cand_clean:
+        return 0.0
+    return len(seed_clean & cand_clean) / max(len(seed_clean), 1)
 
 
 def _tags_to_vector(tags: List[str]) -> List[float]:
@@ -103,11 +138,17 @@ def build_seed_profile(
     top_tags = [t for t, _ in sorted(tag_count.items(), key=lambda x: -x[1])[:15]]
 
     top_genres = set(g for g, _ in sorted(genre_count.items(), key=lambda x: -x[1])[:20])
+    family_terms = all_genres + top_tags
+    family_count: Dict[str, int] = {}
+    for family in _families_for_terms(family_terms):
+        family_count[family] = sum(1 for term in family_terms if family in _families_for_terms({term}))
 
     return {
         "vector": avg_vector,
         "tags": top_tags,
         "genres": top_genres,
+        "families": set(family_count.keys()),
+        "family_count": family_count,
         "artists": list(set(all_artists)),
         "genre_count": genre_count,
         "has_lfm": len(vectors) > 0,
@@ -133,6 +174,8 @@ def score_candidates(
     seed_vec = seed_profile["vector"]
     seed_genres = seed_profile["genres"]
     seed_genre_count = seed_profile.get("genre_count", {})
+    seed_tags = set(seed_profile.get("tags", []))
+    seed_families = set(seed_profile.get("families", set()))
     seed_artists = set(seed_profile["artists"])
     total_genre_weight = sum(seed_genre_count.values()) or 1
     has_lfm = seed_profile["has_lfm"]
@@ -155,14 +198,18 @@ def score_candidates(
 
         # 1. Score Last.fm directo (cancion marcada como similar por Last.fm)
         lfm_direct = lastfm_similar.get(tid, 0.0)
+        cand_tags = set((lfm_data.get(tid, {}) or {}).get("tags", []))
+        candidate_families = _families_for_terms(cand_genres | cand_tags)
+        family_overlap = bool(seed_families & candidate_families)
+        tags_score = _tag_overlap(seed_tags, cand_tags)
 
         # 2. Score por similitud de vector de tags Last.fm
         lfm_vec_score = 0.0
         if has_lfm:
             cand_lfm = lfm_data.get(tid, {})
-            cand_tags = cand_lfm.get("tags", [])
-            if cand_tags:
-                cand_vec = _tags_to_vector(cand_tags)
+            candidate_tags = cand_lfm.get("tags", [])
+            if candidate_tags and (tags_score > 0 or family_overlap):
+                cand_vec = _tags_to_vector(candidate_tags)
                 lfm_vec_score = _cosine_similarity(seed_vec, cand_vec)
 
         # 3. Score por generos de Spotify (ponderado por frecuencia)
@@ -172,15 +219,21 @@ def score_candidates(
         # 4. Bonus por artista compartido
         artist_bonus = 0.20 if cand_artists & seed_artists else 0.0
 
+        has_hard_match = bool(lfm_direct > 0 or genre_score > 0 or tags_score > 0 or artist_bonus > 0)
+        if seed_families and candidate_families and not family_overlap and not lfm_direct and not artist_bonus:
+            continue
+        if not has_hard_match:
+            continue
+
         # Combinar scores segun disponibilidad
         if lfm_direct > 0:
             # Last.fm dijo explicitamente que es similar: maxima prioridad
-            score = lfm_direct * 0.50 + genre_score * 0.30 + lfm_vec_score * 0.10 + artist_bonus * 0.10
+            score = lfm_direct * 0.45 + genre_score * 0.30 + tags_score * 0.15 + lfm_vec_score * 0.05 + artist_bonus * 0.05
         elif lfm_vec_score > 0:
-            score = lfm_vec_score * 0.45 + genre_score * 0.40 + artist_bonus * 0.15
+            score = lfm_vec_score * 0.20 + genre_score * 0.50 + tags_score * 0.20 + artist_bonus * 0.10
         else:
             # Solo generos y artistas
-            score = genre_score * 0.80 + artist_bonus * 0.20
+            score = genre_score * 0.75 + tags_score * 0.15 + artist_bonus * 0.10
 
         if score > 0:
             results.append((tid, score))
