@@ -163,6 +163,14 @@ def get_audio_features_resilient(
 def get_artists_info(sp: spotipy.Spotify, artist_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     out: Dict[str, Dict[str, Any]] = {}
     uniq = list(dict.fromkeys(a for a in artist_ids if a))
+    max_artists = int(os.getenv("SPOTIFY_MAX_ARTIST_GENRE_FETCH", "200"))
+    if len(uniq) > max_artists:
+        logger.warning(
+            "Limitando consulta de generos Spotify a %s de %s artistas para evitar rate limits.",
+            max_artists,
+            len(uniq),
+        )
+        uniq = uniq[:max_artists]
     for artist_id in tqdm(uniq, desc="Generos (artistas)", unit="artist"):
         try:
             artist = sp.artist(artist_id)
@@ -172,6 +180,12 @@ def get_artists_info(sp: spotipy.Spotify, artist_ids: List[str]) -> Dict[str, Di
             status = getattr(e, "http_status", None)
             if status == 429:
                 wait = float(getattr(e, "headers", {}).get("Retry-After", 1))
+                if wait > 30:
+                    logger.warning(
+                        "Rate limit largo (%ss) al obtener artistas; se omite el resto del enriquecimiento.",
+                        wait,
+                    )
+                    break
                 logger.warning(f"Rate limit 429 en artista {artist_id}, esperando {wait}s...")
                 time.sleep(wait + 0.5)
                 try:

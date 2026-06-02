@@ -58,20 +58,16 @@ def _get_sp():
 def _ensure_loaded(limit=None):
     if _cache["loaded"]:
         return
-    from spotify_client import get_user_client, get_app_client, fetch_all_liked, get_artists_info
+    from spotify_client import get_user_client, fetch_all_liked
     from main import build_track_meta
     sp_user = get_user_client()
-    sp_app = get_app_client()
     _cache["sp_user"] = sp_user
     logger.info("Cargando Me Gusta...")
     liked_items = fetch_all_liked(sp_user, limit=limit)
-    all_artist_ids = []
-    for it in liked_items:
-        tr = it.get("track") or {}
-        for a in tr.get("artists", []) or []:
-            if a.get("id"):
-                all_artist_ids.append(a["id"])
-    artists_by_id = get_artists_info(sp_app, all_artist_ids)
+    # En Development Mode, Spotify puede rate-limitar fuerte las llamadas
+    # individuales a artistas. Para que la app arranque rapido, el flujo web
+    # usa nombres de artistas + Last.fm tags y no bloquea aqui por generos.
+    artists_by_id = {}
     track_meta = build_track_meta(liked_items, artists_by_id)
     _cache["artists_by_id"] = artists_by_id
     _cache["track_meta"] = track_meta
@@ -81,12 +77,13 @@ def _ensure_loaded(limit=None):
 
 def _extract_signals(tid):
     meta = _cache["track_meta"].get(tid, {})
-    genres, artists = [], []
+    genres = list(meta.get("genres", []) or [])
+    artists = [a.strip().lower() for a in meta.get("artists", "").split(";") if a.strip()]
     for aid in meta.get("artist_ids", []):
         art = _cache["artists_by_id"].get(aid, {})
         genres.extend(art.get("genres", []))
         name = art.get("name", "")
-        if name:
+        if name and name.lower() not in artists:
             artists.append(name.lower())
     return genres + artists
 
