@@ -12,7 +12,6 @@ const SWIPE_THRESHOLD = W * 0.35;
 
 export default function SwipeScreen({ navigation }) {
   const [card, setCard] = useState(null);
-  const [nextCard, setNextCard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [remaining, setRemaining] = useState(0);
   const [approved, setApproved] = useState(0);
@@ -85,21 +84,19 @@ export default function SwipeScreen({ navigation }) {
     }
   }
 
-  async function loadNext() {
-    setLoading(true);
+  async function loadNext(showLoader = true) {
+    if (showLoader) setLoading(true);
     setScreenError("");
     try {
-      const res = await API.getNext(2);
+      const res = await API.getNext(1);
       const cards = res.cards || [];
       setCard(cards[0] || null);
-      setNextCard(cards[1] || null);
       setRemaining(res.remaining || 0);
     } catch (e) {
       setCard(null);
-      setNextCard(null);
       setScreenError(e.message || "No se pudieron cargar canciones");
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   }
 
@@ -113,32 +110,24 @@ export default function SwipeScreen({ navigation }) {
       duration: 300, useNativeDriver: false,
     }).start(async () => {
       pan.setValue({ x: 0, y: 0 });
+      setCard(null);
+      setLoading(true);
       try {
-        await API.sendFeedback(
+        const feedback = await API.sendFeedback(
           isLike ? [current.id] : [],
           isLike ? [] : [current.id],
         );
+        if (typeof feedback.remaining === "number") {
+          setRemaining(feedback.remaining);
+        }
         if (isLike) setApproved(a => a + 1);
       } catch (e) {
         setScreenError(e.message || "No se pudo guardar tu seleccion");
       }
 
       if (connectPlaying) pauseSpotify(true);
-
-      if (nextCard) {
-        setCard(nextCard);
-        setNextCard(null);
-        try {
-          const res = await API.getNext(1);
-          const cards = res.cards || [];
-          setNextCard(cards[0] || null);
-          setRemaining(res.remaining || 0);
-        } catch (e) {
-          setScreenError(e.message || "No se pudo cargar la siguiente cancion");
-        }
-      } else {
-        await loadNext();
-      }
+      await loadNext(false);
+      setLoading(false);
     });
   }
 
@@ -188,14 +177,6 @@ export default function SwipeScreen({ navigation }) {
         {screenError ? <Text style={styles.screenError}>{screenError}</Text> : null}
 
         <View style={styles.cardArea}>
-          {nextCard && (
-            <View style={[styles.card, styles.cardBack]}>
-              {nextCard.image_url && (
-                <Image source={{ uri: nextCard.image_url }} style={styles.cardImage} />
-              )}
-            </View>
-          )}
-
           <Animated.View
             style={[styles.card, { transform: [{ translateX: pan.x }, { translateY: pan.y }, { rotate }] }]}
             {...panResponder.panHandlers}

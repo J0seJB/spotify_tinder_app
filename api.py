@@ -330,7 +330,7 @@ def get_next_batch(count: int = 1):
             "uri": meta.get("uri") or details["uri"],
             "external_url": details["external_url"],
         })
-    return {"cards": cards, "remaining": max(0, len(pool) - count)}
+    return {"cards": cards, "remaining": max(0, len(pool) - len(batch))}
 
 @app.post("/feedback")
 def submit_feedback(req: FeedbackRequest):
@@ -342,11 +342,13 @@ def submit_feedback(req: FeedbackRequest):
                 _cache["final_approved"].append(tid)
     if req.rejected:
         _update_signals(req.rejected, 0.6, _cache["rejected_signals"])
+    remaining = len(_rescore(_cache["suggestions"])) if _cache["suggestions"] else 0
     top_liked = sorted(_cache["approved_signals"].items(), key=lambda x: -x[1])[:5]
     top_avoid = sorted(_cache["rejected_signals"].items(), key=lambda x: -x[1])[:3]
     return {
         "ok": True,
         "approved_total": len(_cache["final_approved"]),
+        "remaining": remaining,
         "learning": {
             "likes": [s for s, _ in top_liked],
             "dislikes": [s for s, _ in top_avoid],
