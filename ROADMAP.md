@@ -60,3 +60,15 @@ Criterios:
 - Tokens OAuth por usuario.
 - Flujos `/load`, `/search`, `/seeds`, `/next`, `/feedback` y `/create-playlist` por sesion.
 - Evitar una sola variable global `_cache` para todos los usuarios.
+
+### 7. Motor IA de recomendacion y aprendizaje continuo
+
+Crear un motor de recomendacion mas robusto que combine metadata musical, letras, artistas, generos, tags, idioma, mood y feedback por swipe.
+
+Criterios:
+- Analizar canciones con senales persistentes: artistas, generos, tags Last.fm, temas de letras, idioma, mood y energia aproximada.
+- Guardar embeddings o vectores de descripcion musical para comparar canciones por significado, no solo por artista/genero.
+- Construir un perfil vivo por sesion con likes y rechazos.
+- Recalcular el ranking despues de cada swipe usando similitud a likes, distancia a rechazos, balance por semillas y diversidad de artistas.
+- Penalizar repeticion excesiva de artistas o estilos dominantes.
+- Reutilizar analisis guardado en base de datos para acelerar futuras sesiones y testers.
