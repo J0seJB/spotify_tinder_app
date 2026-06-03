@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  View, Text, StyleSheet, Image, TouchableOpacity,
+  View, Text, StyleSheet, Image, TouchableOpacity, Pressable,
   Animated, PanResponder, Dimensions, ActivityIndicator, Platform
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -38,7 +38,7 @@ export default function SwipeScreen({ route, navigation }) {
   const [seeking, setSeeking] = useState(false);
 
   const pan = useRef(new Animated.ValueXY()).current;
-  const progressWidth = useRef(1);
+  const progressLayout = useRef({ x: 0, width: 1 });
   const rotate = pan.x.interpolate({ inputRange: [-W, 0, W], outputRange: ["-20deg", "0deg", "20deg"] });
   const likeOpacity = pan.x.interpolate({ inputRange: [0, SWIPE_THRESHOLD / 2], outputRange: [0, 1], extrapolate: "clamp" });
   const nopeOpacity = pan.x.interpolate({ inputRange: [-SWIPE_THRESHOLD / 2, 0], outputRange: [1, 0], extrapolate: "clamp" });
@@ -205,8 +205,12 @@ export default function SwipeScreen({ route, navigation }) {
   }
 
   function seekFromEvent(event) {
-    const width = progressWidth.current || 1;
-    const x = event?.nativeEvent?.locationX ?? 0;
+    const native = event?.nativeEvent || {};
+    const width = progressLayout.current.width || 1;
+    let x = native.locationX ?? native.offsetX;
+    if (typeof x !== "number") {
+      x = (native.pageX ?? 0) - (progressLayout.current.x || 0);
+    }
     seekToRatio(x / width);
   }
 
@@ -344,11 +348,17 @@ export default function SwipeScreen({ route, navigation }) {
                       </Text>
                     </TouchableOpacity>
                   </View>
-                  <TouchableOpacity
+                  <Pressable
                     activeOpacity={0.85}
                     style={[styles.progressTrack, (!playback.duration_ms || seeking) && styles.progressTrackDisabled]}
-                    onLayout={event => { progressWidth.current = event.nativeEvent.layout.width || 1; }}
-                    onPress={seekFromEvent}
+                    onLayout={event => {
+                      const layout = event.nativeEvent.layout || {};
+                      progressLayout.current = {
+                        x: layout.x || progressLayout.current.x || 0,
+                        width: layout.width || 1,
+                      };
+                    }}
+                    onPressIn={seekFromEvent}
                     disabled={!playback.duration_ms || seeking}
                   >
                     <View
@@ -357,7 +367,7 @@ export default function SwipeScreen({ route, navigation }) {
                         { width: `${Math.min(100, ((playback.progress_ms || 0) / Math.max(1, playback.duration_ms || 1)) * 100)}%` },
                       ]}
                     />
-                  </TouchableOpacity>
+                  </Pressable>
                   <View style={styles.progressTimes}>
                     <Text style={styles.progressTime}>{formatMs(playback.progress_ms)}</Text>
                     <Text style={styles.progressTime}>{formatMs(playback.duration_ms)}</Text>
