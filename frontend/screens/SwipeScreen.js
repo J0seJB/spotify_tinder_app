@@ -220,6 +220,7 @@ export default function SwipeScreen({ route, navigation }) {
         approved: result.approved_total || approved,
         completed: result.added || 0,
         completedTracks: result.tracks || [],
+        seeds: routeSeeds,
       });
     } catch (e) {
       setScreenError(e.message || "No se pudo completar la playlist");
@@ -259,7 +260,10 @@ export default function SwipeScreen({ route, navigation }) {
             <Text style={styles.secondaryBtnText}>Agregar mas semillas</Text>
           </TouchableOpacity>
         ) : null}
-        <TouchableOpacity style={[styles.btn, noSuggestions && styles.quietBtn]} onPress={() => navigation.replace("Playlist", { approved })}>
+        <TouchableOpacity
+          style={[styles.btn, noSuggestions && styles.quietBtn]}
+          onPress={() => navigation.navigate("Playlist", { approved, seeds: routeSeeds })}
+        >
           <Text style={[styles.btnText, noSuggestions && styles.quietBtnText]}>Crear playlist</Text>
         </TouchableOpacity>
       </View>
@@ -281,7 +285,7 @@ export default function SwipeScreen({ route, navigation }) {
 
       <SafeAreaView style={{ flex: 1 }}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.replace("Playlist", { approved })}>
+          <TouchableOpacity onPress={() => navigation.navigate("Playlist", { approved, seeds: routeSeeds })}>
             <Text style={styles.headerLink}>Crear playlist ({approved})</Text>
           </TouchableOpacity>
           {completion?.can_complete ? (
