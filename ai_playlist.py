@@ -246,6 +246,61 @@ def score_candidates(
     return out
 
 
+def balance_suggestions_by_seed(
+    suggestions: List[Tuple[str, float, Dict[str, Any]]],
+    lastfm_matches: Dict[str, Dict[str, Any]],
+    seed_ids: List[str],
+    top_n: int,
+) -> List[Tuple[str, float, Dict[str, Any]]]:
+    """Intercala matches directos por semilla para que ninguna semilla domine toda la lista."""
+    if not suggestions or not lastfm_matches or not seed_ids:
+        return suggestions[:top_n]
+
+    by_id = {tid: (tid, score, meta) for tid, score, meta in suggestions}
+    buckets: Dict[str, List[Tuple[str, float, Dict[str, Any]]]] = {sid: [] for sid in seed_ids}
+    direct_ids: set[str] = set()
+
+    for tid, _score, _meta in suggestions:
+        match = lastfm_matches.get(tid)
+        if not match:
+            continue
+        seed_match_ids = [sid for sid in seed_ids if sid in match.get("seed_ids", set())]
+        if not seed_match_ids:
+            continue
+        best_seed = min(seed_match_ids, key=lambda sid: len(buckets[sid]))
+        buckets[best_seed].append(by_id[tid])
+        direct_ids.add(tid)
+
+    balanced: List[Tuple[str, float, Dict[str, Any]]] = []
+    used: set[str] = set()
+    while len(balanced) < top_n:
+        added = False
+        for seed_id in seed_ids:
+            bucket = buckets.get(seed_id, [])
+            while bucket and bucket[0][0] in used:
+                bucket.pop(0)
+            if not bucket:
+                continue
+            item = bucket.pop(0)
+            balanced.append(item)
+            used.add(item[0])
+            added = True
+            if len(balanced) >= top_n:
+                break
+        if not added:
+            break
+
+    for item in suggestions:
+        if len(balanced) >= top_n:
+            break
+        if item[0] in used:
+            continue
+        balanced.append(item)
+        used.add(item[0])
+
+    return balanced[:top_n]
+
+
 # -----------------------------------------
 # Descripcion IA con Claude
 # -----------------------------------------
@@ -319,9 +374,10 @@ def suggest_from_seeds(
     lfm_client = None
     lfm_data: Dict[str, Dict[str, Any]] = {}
     lastfm_similar: Dict[str, float] = {}
+    lastfm_matches: Dict[str, Dict[str, Any]] = {}
 
     try:
-        from lastfm_client import get_lastfm_client, enrich_tracks_with_lastfm, get_lastfm_similar_ids
+        from lastfm_client import get_lastfm_client, enrich_tracks_with_lastfm, get_lastfm_similar_matches
         lfm_client = get_lastfm_client()
     except ImportError:
         pass
@@ -337,9 +393,10 @@ def suggest_from_seeds(
 
         # Buscar similares directas en Last.fm para cada semilla
         logger.info("Buscando canciones similares en Last.fm...")
-        lastfm_similar = get_lastfm_similar_ids(
+        lastfm_matches = get_lastfm_similar_matches(
             seed_track_ids, track_meta, {}, lfm_client, top_n=100
         )
+        lastfm_similar = {tid: data["score"] for tid, data in lastfm_matches.items()}
         logger.info(f"Last.fm encontro {len(lastfm_similar)} coincidencias en tus Me Gusta.")
     else:
         logger.warning("Sin Last.fm: la similitud queda limitada a generos y artistas de Spotify.")
@@ -380,6 +437,9 @@ def suggest_from_seeds(
         lfm_data, lastfm_similar,
         exclude_ids=set(seed_track_ids),
         top_n=top_n,
+    )
+    suggestions = balance_suggestions_by_seed(
+        suggestions, lastfm_matches, seed_track_ids, top_n=top_n
     )
 
     # -- Reordenar con similitud de letras (top 30) --

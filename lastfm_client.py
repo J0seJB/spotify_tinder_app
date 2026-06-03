@@ -192,7 +192,23 @@ def get_lastfm_similar_ids(
     Busca canciones similares en Last.fm para cada semilla,
     y devuelve {track_id -> score} de las que estan en los Me Gusta.
     """
-    similar_scores: Dict[str, float] = {}
+    matches = get_lastfm_similar_matches(seed_ids, track_meta, all_track_names, lfm, top_n=top_n)
+    return {tid: data["score"] for tid, data in matches.items()}
+
+
+def get_lastfm_similar_matches(
+    seed_ids: List[str],
+    track_meta: Dict[str, Dict[str, Any]],
+    all_track_names: Dict[str, str],  # nombre_lower -> track_id
+    lfm: LastFMClient,
+    top_n: int = 100,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Busca canciones similares en Last.fm para cada semilla.
+    Retorna {track_id -> {score, seed_ids}} para poder balancear el ranking
+    por semilla y evitar que un artista popular domine toda la lista.
+    """
+    similar_matches: Dict[str, Dict[str, Any]] = {}
 
     for tid in seed_ids:
         meta = track_meta.get(tid, {})
@@ -215,9 +231,13 @@ def get_lastfm_similar_ids(
                 c_name = candidate_meta.get("name", "").lower().strip()
                 c_artists = candidate_meta.get("artists", "").lower()
                 if s_name == c_name and s_artist in c_artists:
-                    existing = similar_scores.get(candidate_id, 0)
-                    similar_scores[candidate_id] = max(existing, match_score)
+                    current = similar_matches.setdefault(
+                        candidate_id,
+                        {"score": 0.0, "seed_ids": set()},
+                    )
+                    current["score"] = max(current["score"], match_score)
+                    current["seed_ids"].add(tid)
 
         time.sleep(0.25)
 
-    return similar_scores
+    return similar_matches

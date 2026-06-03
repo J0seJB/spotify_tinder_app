@@ -1,4 +1,4 @@
-from ai_playlist import score_candidates
+from ai_playlist import balance_suggestions_by_seed, score_candidates
 
 
 def test_score_candidates_filters_cross_family_mood_matches():
@@ -82,3 +82,30 @@ def test_score_candidates_ignores_mood_only_matches():
     )
 
     assert suggestions == []
+
+
+def test_balance_suggestions_interleaves_direct_matches_by_seed():
+    suggestions = [
+        ("drake-1", 0.99, {"name": "Drake 1"}),
+        ("drake-2", 0.98, {"name": "Drake 2"}),
+        ("drake-3", 0.97, {"name": "Drake 3"}),
+        ("feid-1", 0.70, {"name": "Feid 1"}),
+        ("feid-2", 0.69, {"name": "Feid 2"}),
+        ("other-1", 0.60, {"name": "Other"}),
+    ]
+    lastfm_matches = {
+        "drake-1": {"score": 0.99, "seed_ids": {"seed-drake"}},
+        "drake-2": {"score": 0.98, "seed_ids": {"seed-drake"}},
+        "drake-3": {"score": 0.97, "seed_ids": {"seed-drake"}},
+        "feid-1": {"score": 0.70, "seed_ids": {"seed-feid"}},
+        "feid-2": {"score": 0.69, "seed_ids": {"seed-feid"}},
+    }
+
+    balanced = balance_suggestions_by_seed(
+        suggestions=suggestions,
+        lastfm_matches=lastfm_matches,
+        seed_ids=["seed-drake", "seed-feid"],
+        top_n=6,
+    )
+
+    assert [tid for tid, _, _ in balanced[:4]] == ["drake-1", "feid-1", "drake-2", "feid-2"]
