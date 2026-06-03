@@ -19,6 +19,7 @@ function formatMs(ms = 0) {
 
 export default function SwipeScreen({ route, navigation }) {
   const routeSeeds = route?.params?.seeds || [];
+  const source = route?.params?.source || "liked";
   const seedCount = routeSeeds.length;
   const [card, setCard] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -221,6 +222,7 @@ export default function SwipeScreen({ route, navigation }) {
         completed: result.added || 0,
         completedTracks: result.tracks || [],
         seeds: routeSeeds,
+        source,
       });
     } catch (e) {
       setScreenError(e.message || "No se pudo completar la playlist");
@@ -230,7 +232,7 @@ export default function SwipeScreen({ route, navigation }) {
   }
 
   function addMoreSeeds() {
-    navigation.replace("SearchSeed", { initialSeeds: routeSeeds });
+    navigation.replace("SearchSeed", { initialSeeds: routeSeeds, initialSource: source });
   }
 
   if (loading) {
@@ -262,7 +264,7 @@ export default function SwipeScreen({ route, navigation }) {
         ) : null}
         <TouchableOpacity
           style={[styles.btn, noSuggestions && styles.quietBtn]}
-          onPress={() => navigation.navigate("Playlist", { approved, seeds: routeSeeds })}
+          onPress={() => navigation.navigate("Playlist", { approved, seeds: routeSeeds, source })}
         >
           <Text style={[styles.btnText, noSuggestions && styles.quietBtnText]}>Crear playlist</Text>
         </TouchableOpacity>
@@ -285,7 +287,7 @@ export default function SwipeScreen({ route, navigation }) {
 
       <SafeAreaView style={{ flex: 1 }}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.navigate("Playlist", { approved, seeds: routeSeeds })}>
+          <TouchableOpacity onPress={() => navigation.navigate("Playlist", { approved, seeds: routeSeeds, source })}>
             <Text style={styles.headerLink}>Crear playlist ({approved})</Text>
           </TouchableOpacity>
           {completion?.can_complete ? (

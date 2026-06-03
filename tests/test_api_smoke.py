@@ -178,6 +178,98 @@ def test_player_seek_calls_spotify_seek(monkeypatch):
     assert calls == [(12345, "dev-1")]
 
 
+def test_discover_search_uses_spotify_global_search(monkeypatch):
+    original = _cache.copy()
+    try:
+        class FakeSpotify:
+            def search(self, q, type, limit):
+                assert q == "iris"
+                assert type == "track"
+                return {
+                    "tracks": {
+                        "items": [{
+                            "id": "spotify-track-1",
+                            "name": "Iris",
+                            "uri": "spotify:track:spotify-track-1",
+                            "artists": [{"id": "artist-1", "name": "Goo Goo Dolls"}],
+                            "album": {"name": "Dizzy Up", "images": []},
+                            "external_urls": {"spotify": "https://open.spotify.com/track/spotify-track-1"},
+                        }]
+                    }
+                }
+
+        monkeypatch.setattr("api._get_sp", lambda: FakeSpotify())
+        _cache.update({"track_meta": {}, "loaded": False})
+
+        response = client.get("/search?q=iris&source=discover")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["source"] == "discover"
+        assert payload["results"][0]["id"] == "spotify-track-1"
+        assert _cache["track_meta"]["spotify-track-1"]["name"] == "Iris"
+    finally:
+        _cache.clear()
+        _cache.update(original)
+
+
+def test_discover_seeds_build_suggestions_from_lastfm(monkeypatch):
+    original = _cache.copy()
+    try:
+        class FakeLastFm:
+            def get_similar_tracks(self, artist, track, limit=35):
+                assert artist == "Goo Goo Dolls"
+                assert track == "Iris"
+                return [{"name": "Slide", "artist": "Goo Goo Dolls", "match": 0.91}]
+
+        class FakeSpotify:
+            def search(self, q, type, limit):
+                assert "Slide" in q
+                return {
+                    "tracks": {
+                        "items": [{
+                            "id": "slide-1",
+                            "name": "Slide",
+                            "uri": "spotify:track:slide-1",
+                            "artists": [{"id": "artist-1", "name": "Goo Goo Dolls"}],
+                            "album": {"name": "Dizzy Up", "images": []},
+                            "external_urls": {"spotify": "https://open.spotify.com/track/slide-1"},
+                        }]
+                    }
+                }
+
+        monkeypatch.setattr("api._get_sp", lambda: FakeSpotify())
+        monkeypatch.setattr("lastfm_client.get_lastfm_client", lambda: FakeLastFm())
+        _cache.update({
+            "track_meta": {
+                "seed-1": {
+                    "id": "seed-1",
+                    "name": "Iris",
+                    "uri": "spotify:track:seed-1",
+                    "artists": "Goo Goo Dolls",
+                    "artist_ids": ["artist-1"],
+                    "genres": [],
+                    "duplicate_key": "iris::goo goo dolls",
+                }
+            },
+            "artists_by_id": {},
+            "all_liked_ids": [],
+            "loaded": True,
+        })
+
+        response = client.post("/seeds", json={"track_ids": ["seed-1"], "source": "discover"})
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["source"] == "discover"
+        assert payload["suggestions"] == 1
+        assert _cache["suggestions"][0][0] == "slide-1"
+        assert _cache["source_mode"] == "discover"
+    finally:
+        _cache.clear()
+        _cache.update(original)
+
+
 def test_feedback_reports_remaining_after_learning():
     original = _cache.copy()
     try:

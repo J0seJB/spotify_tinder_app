@@ -25,11 +25,12 @@ _cache: Dict[str, Any] = {
     "sp_user": None, "track_meta": {}, "artists_by_id": {},
     "all_liked_ids": [], "total_saved_tracks": 0, "suggestions": [], "shown_ids": set(),
     "approved_ids": set(), "approved_signals": {}, "rejected_signals": {},
-    "rejected_ids": set(), "final_approved": [], "seed_ids": [], "loaded": False,
+    "rejected_ids": set(), "final_approved": [], "seed_ids": [], "source_mode": "liked", "loaded": False,
 }
 
 class SelectSeedRequest(BaseModel):
     track_ids: List[str]
+    source: str = "liked"
 
 class FeedbackRequest(BaseModel):
     approved: List[str]
@@ -109,6 +110,33 @@ def _track_key(tid: str) -> str:
 def _keys_for_ids(track_ids) -> set[str]:
     return {_track_key(tid) for tid in track_ids if tid}
 
+def _track_to_meta(track: Dict[str, Any]) -> Dict[str, Any]:
+    from main import track_duplicate_key
+
+    artist_objs = track.get("artists", []) or []
+    artist_names = [a.get("name", "") for a in artist_objs if a.get("name")]
+    artist_ids = [a.get("id", "") for a in artist_objs if a.get("id")]
+    artists = "; ".join(artist_names)
+    return {
+        "name": track.get("name", ""),
+        "uri": track.get("uri", ""),
+        "artists": artists,
+        "artist_ids": artist_ids,
+        "genres": [],
+        "duplicate_key": track_duplicate_key(track.get("name", ""), artists),
+        "album_name": track.get("album", {}).get("name", ""),
+        "image_url": ((track.get("album", {}).get("images") or [{}])[0] or {}).get("url"),
+        "preview_url": track.get("preview_url"),
+        "external_url": track.get("external_urls", {}).get("spotify"),
+    }
+
+def _remember_track(track: Dict[str, Any]) -> Optional[str]:
+    tid = track.get("id")
+    if not tid:
+        return None
+    _cache["track_meta"][tid] = _track_to_meta(track)
+    return tid
+
 def _card_from_track(tid: str, score: float, meta: Dict[str, Any]) -> Dict[str, Any]:
     details = _get_track_details(tid)
     return {
@@ -173,6 +201,73 @@ def _complete_state() -> Dict[str, Any]:
         "remaining": remaining,
         "min_selected": 5,
     }
+
+def _search_spotify_tracks(q: str, limit: int = 10) -> List[Dict[str, Any]]:
+    sp = _get_sp()
+    results = sp.search(q=q, type="track", limit=limit)
+    out = []
+    seen_keys = set()
+    for track in (results.get("tracks", {}) or {}).get("items", []) or []:
+        tid = _remember_track(track)
+        if not tid:
+            continue
+        key = _track_key(tid)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        meta = _cache["track_meta"][tid]
+        out.append({"id": tid, "name": meta.get("name", ""), "artists": meta.get("artists", ""), "source": "discover"})
+    return out
+
+def _build_discover_suggestions(seed_ids: List[str], top_n: int = 150) -> List[tuple[str, float, Dict[str, Any]]]:
+    try:
+        from lastfm_client import get_lastfm_client
+        lfm = get_lastfm_client()
+    except Exception:
+        lfm = None
+    if not lfm:
+        raise HTTPException(status_code=400, detail="Configura LASTFM_API_KEY para descubrir musica nueva")
+
+    sp = _get_sp()
+    suggestions: list[tuple[str, float, Dict[str, Any]]] = []
+    seen_keys = _keys_for_ids(seed_ids)
+
+    for seed_id in seed_ids:
+        seed_meta = _cache["track_meta"].get(seed_id, {})
+        seed_name = seed_meta.get("name", "")
+        seed_artist = (seed_meta.get("artists", "") or "").split(";")[0].strip()
+        if not seed_name or not seed_artist:
+            continue
+
+        for similar in lfm.get_similar_tracks(seed_artist, seed_name, limit=35):
+            name = similar.get("name", "").strip()
+            artist = similar.get("artist", "").strip()
+            if not name or not artist:
+                continue
+
+            query = f'track:"{name}" artist:"{artist}"'
+            try:
+                results = sp.search(q=query, type="track", limit=3)
+            except SpotifyException as exc:
+                logger.warning("Spotify search fallo para %s - %s: %s", artist, name, exc)
+                continue
+            for track in (results.get("tracks", {}) or {}).get("items", []) or []:
+                tid = _remember_track(track)
+                if not tid or tid in seed_ids:
+                    continue
+                key = _track_key(tid)
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                score = max(0.0, min(1.0, float(similar.get("match", 0) or 0)))
+                suggestions.append((tid, round(score, 4), _cache["track_meta"].get(tid, {})))
+                break
+            if len(suggestions) >= top_n:
+                return suggestions[:top_n]
+            time.sleep(0.1)
+
+    suggestions.sort(key=lambda item: -item[1])
+    return suggestions[:top_n]
 
 def _get_track_details(tid: str):
     meta = _cache["track_meta"].get(tid, {})
@@ -368,9 +463,15 @@ def load_tracks(limit: Optional[int] = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/search")
-def search_tracks(q: str):
-    if not _cache["loaded"]:
+def search_tracks(q: str, source: str = "liked"):
+    source = (source or "liked").lower()
+    if source not in ("liked", "discover"):
+        raise HTTPException(status_code=400, detail="source debe ser liked o discover")
+    if not _cache["loaded"] and source == "liked":
         raise HTTPException(status_code=400, detail="Primero llama /load")
+    if source == "discover":
+        return {"results": _search_spotify_tracks(q), "source": "discover"}
+
     q_lower = q.lower()
     results = []
     seen_keys = set()
@@ -383,14 +484,18 @@ def search_tracks(q: str):
             seen_keys.add(key)
         if len(results) >= 10:
             break
-    return {"results": results}
+    return {"results": results, "source": "liked"}
 
 @app.post("/seeds")
 def set_seeds(req: SelectSeedRequest):
-    if not _cache["loaded"]:
+    source = (req.source or "liked").lower()
+    if source not in ("liked", "discover"):
+        raise HTTPException(status_code=400, detail="source debe ser liked o discover")
+    if not _cache["loaded"] and source == "liked":
         raise HTTPException(status_code=400, detail="Primero llama /load")
     try:
         from ai_playlist import suggest_from_seeds
+        _cache["source_mode"] = source
         _cache["seed_ids"] = req.track_ids
         _cache["shown_ids"] = set(req.track_ids)
         _cache["approved_ids"] = set(req.track_ids)
@@ -399,18 +504,23 @@ def set_seeds(req: SelectSeedRequest):
         _cache["rejected_ids"] = set()
         _cache["final_approved"] = list(req.track_ids)
         _update_signals(req.track_ids, 1.0, _cache["approved_signals"])
-        result = suggest_from_seeds(
-            seed_track_ids=req.track_ids,
-            all_liked_ids=_cache["all_liked_ids"],
-            features_by_id={},
-            artists_by_id=_cache["artists_by_id"],
-            track_meta=_cache["track_meta"],
-            top_n=150,
-            use_ai_description=False,
-        )
+        if source == "discover":
+            suggestions = _build_discover_suggestions(req.track_ids, top_n=150)
+            result = {"suggestions": suggestions, "profile": {"genres": set(), "tags": [], "dominant_themes": []}}
+        else:
+            result = suggest_from_seeds(
+                seed_track_ids=req.track_ids,
+                all_liked_ids=_cache["all_liked_ids"],
+                features_by_id={},
+                artists_by_id=_cache["artists_by_id"],
+                track_meta=_cache["track_meta"],
+                top_n=150,
+                use_ai_description=False,
+            )
         _cache["suggestions"] = result["suggestions"]
         return {
             "ok": True,
+            "source": source,
             "seeds": len(req.track_ids),
             "suggestions": len(_cache["suggestions"]),
             "profile": {
@@ -543,6 +653,6 @@ def create_playlist(req: CreatePlaylistRequest):
 def reset_session():
     _cache.update({
         "suggestions": [], "shown_ids": set(), "approved_ids": set(),
-        "approved_signals": {}, "rejected_signals": {}, "rejected_ids": set(), "final_approved": [], "seed_ids": [],
+        "approved_signals": {}, "rejected_signals": {}, "rejected_ids": set(), "final_approved": [], "seed_ids": [], "source_mode": "liked",
     })
     return {"ok": True}

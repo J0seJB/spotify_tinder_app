@@ -8,6 +8,8 @@ import { API } from "../api";
 
 export default function SearchSeedScreen({ route, navigation }) {
   const initialSeeds = route?.params?.initialSeeds || [];
+  const initialSource = route?.params?.initialSource || "liked";
+  const [source, setSource] = useState(initialSource);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [seeds, setSeeds] = useState(initialSeeds);
@@ -22,7 +24,7 @@ export default function SearchSeedScreen({ route, navigation }) {
       return;
     }
     try {
-      const res = await API.search(text);
+      const res = await API.search(text, source);
       setResults(res.results || []);
     } catch (e) {
       setResults([]);
@@ -39,13 +41,22 @@ export default function SearchSeedScreen({ route, navigation }) {
     }
   }
 
+  function changeSource(nextSource) {
+    if (source === nextSource) return;
+    setSource(nextSource);
+    setQuery("");
+    setResults([]);
+    setSeeds([]);
+    setSearchError("");
+  }
+
   async function startSwiping() {
     if (seeds.length === 0) return;
     setAnalyzing(true);
     setSearchError("");
     try {
-      await API.setSeeds(seeds.map(s => s.id));
-      navigation.replace("Swipe", { seeds });
+      await API.setSeeds(seeds.map(s => s.id), source);
+      navigation.replace("Swipe", { seeds, source });
     } catch (e) {
       setSearchError(e.message || "No se pudo analizar la seleccion");
       setAnalyzing(false);
@@ -56,11 +67,30 @@ export default function SearchSeedScreen({ route, navigation }) {
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.title}>Elige tus semillas</Text>
-        <Text style={styles.subtitle}>Canciones que definen el vibe de tu playlist</Text>
+        <Text style={styles.subtitle}>
+          {source === "discover"
+            ? "Busca canciones en Spotify para descubrir musica nueva"
+            : "Canciones que definen el vibe de tu playlist"}
+        </Text>
+
+        <View style={styles.sourceSwitch}>
+          <TouchableOpacity
+            style={[styles.sourceOption, source === "liked" && styles.sourceOptionActive]}
+            onPress={() => changeSource("liked")}
+          >
+            <Text style={[styles.sourceText, source === "liked" && styles.sourceTextActive]}>Me gusta</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sourceOption, source === "discover" && styles.sourceOptionActive]}
+            onPress={() => changeSource("discover")}
+          >
+            <Text style={[styles.sourceText, source === "discover" && styles.sourceTextActive]}>Descubrir</Text>
+          </TouchableOpacity>
+        </View>
 
         <TextInput
           style={styles.input}
-          placeholder="Busca una cancion o artista..."
+          placeholder={source === "discover" ? "Busca en Spotify..." : "Busca una cancion o artista..."}
           placeholderTextColor="#555"
           value={query}
           onChangeText={search}
@@ -131,6 +161,25 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: Platform.OS === "web" ? 34 : 26, fontWeight: "800", color: "#fff", marginTop: Platform.OS === "web" ? 44 : 20 },
   subtitle: { fontSize: 14, color: "#666", marginBottom: 20 },
+  sourceSwitch: {
+    flexDirection: "row",
+    backgroundColor: "#141414",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#242424",
+    padding: 4,
+    marginBottom: 14,
+  },
+  sourceOption: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sourceOptionActive: { backgroundColor: "#1DB954" },
+  sourceText: { color: "#888", fontSize: 13, fontWeight: "800" },
+  sourceTextActive: { color: "#000" },
   input: {
     backgroundColor: "#1a1a1a", borderRadius: 12, padding: 14,
     color: "#fff", fontSize: 16, marginBottom: 12,

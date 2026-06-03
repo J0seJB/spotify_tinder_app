@@ -5,7 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { API } from "../api";
 
 export default function PlaylistScreen({ route, navigation }) {
-  const { approved = 0, completed = 0, completedTracks = [], seeds = [] } = route.params || {};
+  const { approved = 0, completed = 0, completedTracks = [], seeds = [], source = "liked" } = route.params || {};
   const [name, setName] = useState("Mi playlist IA");
   const [isPublic, setIsPublic] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -37,7 +37,7 @@ export default function PlaylistScreen({ route, navigation }) {
       return;
     }
     if (seeds.length > 0) {
-      navigation.replace("Swipe", { seeds });
+      navigation.replace("Swipe", { seeds, source });
       return;
     }
     navigation.replace("SearchSeed");

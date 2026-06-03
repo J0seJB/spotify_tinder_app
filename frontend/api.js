@@ -23,15 +23,15 @@ export const API = {
     const r = await fetch(`${BASE_URL}/status`);
     return parseResponse(r, "No se pudo leer el estado");
   },
-  async search(q) {
-    const r = await fetch(`${BASE_URL}/search?q=${encodeURIComponent(q)}`);
+  async search(q, source = "liked") {
+    const r = await fetch(`${BASE_URL}/search?q=${encodeURIComponent(q)}&source=${encodeURIComponent(source)}`);
     return parseResponse(r, "No se pudo buscar");
   },
-  async setSeeds(trackIds) {
+  async setSeeds(trackIds, source = "liked") {
     const r = await fetch(`${BASE_URL}/seeds`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ track_ids: trackIds }),
+      body: JSON.stringify({ track_ids: trackIds, source }),
     });
     return parseResponse(r, "No se pudieron guardar las canciones semilla");
   },
