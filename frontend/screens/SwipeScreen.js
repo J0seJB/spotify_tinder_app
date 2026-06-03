@@ -10,6 +10,13 @@ import { API } from "../api";
 const { width: W, height: H } = Dimensions.get("window");
 const SWIPE_THRESHOLD = W * 0.35;
 
+function formatMs(ms = 0) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
 export default function SwipeScreen({ route, navigation }) {
   const routeSeeds = route?.params?.seeds || [];
   const seedCount = routeSeeds.length;
@@ -25,8 +32,12 @@ export default function SwipeScreen({ route, navigation }) {
   const [connectDevice, setConnectDevice] = useState(null);
   const [connectMessage, setConnectMessage] = useState("Toca Play para escuchar en Spotify");
   const [connectError, setConnectError] = useState("");
+  const [autoplayEnabled, setAutoplayEnabled] = useState(true);
+  const [playback, setPlayback] = useState({ progress_ms: 0, duration_ms: 0, is_playing: false });
+  const [seeking, setSeeking] = useState(false);
 
   const pan = useRef(new Animated.ValueXY()).current;
+  const progressWidth = useRef(1);
   const rotate = pan.x.interpolate({ inputRange: [-W, 0, W], outputRange: ["-20deg", "0deg", "20deg"] });
   const likeOpacity = pan.x.interpolate({ inputRange: [0, SWIPE_THRESHOLD / 2], outputRange: [0, 1], extrapolate: "clamp" });
   const nopeOpacity = pan.x.interpolate({ inputRange: [-SWIPE_THRESHOLD / 2, 0], outputRange: [1, 0], extrapolate: "clamp" });
@@ -50,28 +61,59 @@ export default function SwipeScreen({ route, navigation }) {
   }, []);
 
   useEffect(() => {
-    setConnectPlaying(false);
     setConnectError("");
-    setConnectMessage("Toca Play para escuchar en Spotify");
+    setPlayback({ progress_ms: 0, duration_ms: 0, is_playing: false });
+    if (!connectPlaying) setConnectMessage("Toca Play para escuchar en Spotify");
   }, [card?.id]);
 
-  async function playCurrentInSpotify() {
-    if (!card || connectBusy) return;
+  useEffect(() => {
+    if (!connectPlaying || !card) return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const current = await API.currentPlayback();
+        if (cancelled) return;
+        if (!current.track || current.track.id === card.id) {
+          setPlayback(current);
+          setConnectPlaying(Boolean(current.is_playing));
+          if (current.device) setConnectDevice(current.device);
+        }
+      } catch (_e) {
+        // Polling should stay quiet; explicit controls surface errors.
+      }
+    };
+    refresh();
+    const timer = setInterval(refresh, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [connectPlaying, card?.id]);
+
+  async function playTrackInSpotify(targetCard = card, silent = false) {
+    if (!targetCard || connectBusy) return false;
     setConnectBusy(true);
     setConnectError("");
-    setConnectMessage("Buscando dispositivo Spotify...");
+    if (!silent) setConnectMessage("Buscando dispositivo Spotify...");
     try {
-      const res = await API.playTrack({ trackId: card.id, uri: card.uri });
+      const res = await API.playTrack({ trackId: targetCard.id, uri: targetCard.uri });
       setConnectDevice(res.device || null);
       setConnectPlaying(true);
+      setPlayback({ progress_ms: 0, duration_ms: 0, is_playing: true });
       setConnectMessage(`Reproduciendo en ${(res.device && res.device.name) || "Spotify"}`);
+      return true;
     } catch (e) {
       setConnectPlaying(false);
       setConnectError(e.message || "No se pudo reproducir en Spotify");
       setConnectMessage("Abre Spotify en tu celular, PC o Web Player");
+      return false;
     } finally {
       setConnectBusy(false);
     }
+  }
+
+  async function playCurrentInSpotify() {
+    await playTrackInSpotify(card, false);
   }
 
   async function pauseSpotify(silent = false) {
@@ -80,6 +122,7 @@ export default function SwipeScreen({ route, navigation }) {
     try {
       await API.pausePlayback(connectDevice?.id);
       setConnectPlaying(false);
+      setPlayback(p => ({ ...p, is_playing: false }));
       if (!silent) setConnectMessage("Spotify pausado");
     } catch (e) {
       if (!silent) setConnectError(e.message || "No se pudo pausar Spotify");
@@ -94,12 +137,15 @@ export default function SwipeScreen({ route, navigation }) {
     try {
       const res = await API.getNext(1);
       const cards = res.cards || [];
-      setCard(cards[0] || null);
+      const nextCard = cards[0] || null;
+      setCard(nextCard);
       setRemaining(res.remaining || 0);
       if (res.completion) setCompletion(res.completion);
+      return nextCard;
     } catch (e) {
       setCard(null);
       setScreenError(e.message || "No se pudieron cargar canciones");
+      return null;
     } finally {
       if (showLoader) setLoading(false);
     }
@@ -109,6 +155,7 @@ export default function SwipeScreen({ route, navigation }) {
     if (!card) return;
     const current = card;
     const isLike = direction === "right";
+    const shouldAutoplayNext = connectPlaying && autoplayEnabled;
 
     Animated.timing(pan, {
       toValue: { x: isLike ? W * 1.5 : -W * 1.5, y: 0 },
@@ -131,10 +178,35 @@ export default function SwipeScreen({ route, navigation }) {
         setScreenError(e.message || "No se pudo guardar tu seleccion");
       }
 
-      if (connectPlaying) pauseSpotify(true);
-      await loadNext(false);
+      if (connectPlaying && !shouldAutoplayNext) pauseSpotify(true);
+      const nextCard = await loadNext(false);
+      if (shouldAutoplayNext && nextCard) {
+        await playTrackInSpotify(nextCard, true);
+      }
       setLoading(false);
     });
+  }
+
+  async function seekToRatio(ratio) {
+    const duration = playback.duration_ms || 0;
+    if (!duration || seeking) return;
+    const positionMs = Math.round(Math.max(0, Math.min(1, ratio)) * duration);
+    setSeeking(true);
+    setConnectError("");
+    try {
+      await API.seekPlayback(positionMs, connectDevice?.id);
+      setPlayback(p => ({ ...p, progress_ms: positionMs }));
+    } catch (e) {
+      setConnectError(e.message || "No se pudo adelantar la cancion");
+    } finally {
+      setSeeking(false);
+    }
+  }
+
+  function seekFromEvent(event) {
+    const width = progressWidth.current || 1;
+    const x = event?.nativeEvent?.locationX ?? 0;
+    seekToRatio(x / width);
   }
 
   async function completePlaylist() {
@@ -244,16 +316,46 @@ export default function SwipeScreen({ route, navigation }) {
               {card.album ? <Text style={styles.cardAlbum} numberOfLines={1}>{card.album}</Text> : null}
 
               <View style={styles.connectPanel}>
-                <View style={styles.connectCopy}>
-                  <Text style={styles.connectTitle} numberOfLines={1}>
-                    {connectPlaying ? "Spotify Connect activo" : "Spotify Connect"}
-                  </Text>
-                  <Text
-                    style={[styles.connectSubtitle, connectError ? styles.connectError : null]}
-                    numberOfLines={2}
+                <View style={styles.connectMain}>
+                  <View style={styles.connectTopRow}>
+                    <View style={styles.connectCopy}>
+                      <Text style={styles.connectTitle} numberOfLines={1}>
+                        {connectPlaying ? "Spotify Connect activo" : "Spotify Connect"}
+                      </Text>
+                      <Text
+                        style={[styles.connectSubtitle, connectError ? styles.connectError : null]}
+                        numberOfLines={2}
+                      >
+                        {connectError || connectMessage}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.autoplayToggle, autoplayEnabled && styles.autoplayToggleOn]}
+                      onPress={() => setAutoplayEnabled(v => !v)}
+                    >
+                      <Text style={[styles.autoplayToggleText, autoplayEnabled && styles.autoplayToggleTextOn]}>
+                        Auto
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    style={[styles.progressTrack, (!playback.duration_ms || seeking) && styles.progressTrackDisabled]}
+                    onLayout={event => { progressWidth.current = event.nativeEvent.layout.width || 1; }}
+                    onPress={seekFromEvent}
+                    disabled={!playback.duration_ms || seeking}
                   >
-                    {connectError || connectMessage}
-                  </Text>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        { width: `${Math.min(100, ((playback.progress_ms || 0) / Math.max(1, playback.duration_ms || 1)) * 100)}%` },
+                      ]}
+                    />
+                  </TouchableOpacity>
+                  <View style={styles.progressTimes}>
+                    <Text style={styles.progressTime}>{formatMs(playback.progress_ms)}</Text>
+                    <Text style={styles.progressTime}>{formatMs(playback.duration_ms)}</Text>
+                  </View>
                 </View>
                 <TouchableOpacity
                   style={[styles.connectBtn, connectPlaying && styles.connectBtnPause, connectBusy && styles.connectBtnDisabled]}
@@ -351,7 +453,7 @@ const styles = StyleSheet.create({
   cardAlbum: { fontSize: 13, color: "#888", marginTop: 2 },
   connectPanel: {
     marginTop: 14,
-    minHeight: 58,
+    minHeight: 98,
     backgroundColor: "rgba(255,255,255,0.12)",
     borderColor: "rgba(255,255,255,0.18)",
     borderWidth: 1,
@@ -359,13 +461,42 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "stretch",
     gap: 10,
   },
+  connectMain: { flex: 1, minWidth: 0 },
+  connectTopRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   connectCopy: { flex: 1, minWidth: 0 },
   connectTitle: { color: "#fff", fontSize: 13, fontWeight: "800" },
   connectSubtitle: { color: "#cfcfcf", fontSize: 11, marginTop: 2, lineHeight: 15 },
   connectError: { color: "#ff9aa7" },
+  autoplayToggle: {
+    minWidth: 52,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  autoplayToggleOn: { backgroundColor: "#1DB954", borderColor: "#1DB954" },
+  autoplayToggleText: { color: "#cfcfcf", fontSize: 11, fontWeight: "900" },
+  autoplayToggleTextOn: { color: "#000" },
+  progressTrack: {
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    marginTop: 10,
+    overflow: "hidden",
+  },
+  progressTrackDisabled: { opacity: 0.55 },
+  progressFill: {
+    height: "100%",
+    borderRadius: 6,
+    backgroundColor: "#1DB954",
+  },
+  progressTimes: { flexDirection: "row", justifyContent: "space-between", marginTop: 5 },
+  progressTime: { color: "#aaa", fontSize: 10, fontWeight: "700" },
   connectBtn: {
     minWidth: 72,
     height: 38,
@@ -374,6 +505,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 14,
+    alignSelf: "center",
   },
   connectBtnPause: { backgroundColor: "#fff" },
   connectBtnDisabled: { opacity: 0.65 },

@@ -133,6 +133,51 @@ def test_next_uses_actual_batch_size_for_remaining(monkeypatch):
         _cache.update(original)
 
 
+def test_player_current_normalizes_spotify_playback(monkeypatch):
+    class FakeSpotify:
+        def current_playback(self):
+            return {
+                "is_playing": True,
+                "progress_ms": 42000,
+                "device": {"id": "dev-1", "name": "PC", "is_active": True},
+                "item": {
+                    "id": "track-1",
+                    "name": "One",
+                    "uri": "spotify:track:track-1",
+                    "duration_ms": 180000,
+                    "artists": [{"name": "Artist"}],
+                },
+            }
+
+    monkeypatch.setattr("api._get_sp", lambda: FakeSpotify())
+
+    response = client.get("/player/current")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["is_playing"] is True
+    assert payload["progress_ms"] == 42000
+    assert payload["duration_ms"] == 180000
+    assert payload["track"]["name"] == "One"
+    assert payload["device"]["name"] == "PC"
+
+
+def test_player_seek_calls_spotify_seek(monkeypatch):
+    calls = []
+
+    class FakeSpotify:
+        def seek_track(self, position_ms, device_id=None):
+            calls.append((position_ms, device_id))
+
+    monkeypatch.setattr("api._get_sp", lambda: FakeSpotify())
+
+    response = client.post("/player/seek", json={"position_ms": 12345, "device_id": "dev-1"})
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "position_ms": 12345}
+    assert calls == [(12345, "dev-1")]
+
+
 def test_feedback_reports_remaining_after_learning():
     original = _cache.copy()
     try:

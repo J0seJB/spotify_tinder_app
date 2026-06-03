@@ -52,6 +52,10 @@ class PlayerPlayRequest(BaseModel):
 class PlayerPauseRequest(BaseModel):
     device_id: Optional[str] = None
 
+class PlayerSeekRequest(BaseModel):
+    position_ms: int
+    device_id: Optional[str] = None
+
 def _get_sp():
     if _cache["sp_user"] is None:
         from spotify_client import get_user_client
@@ -229,6 +233,30 @@ def _resolve_track_uri(req: PlayerPlayRequest) -> str:
         raise HTTPException(status_code=400, detail="Falta track_id o uri")
     return _cache["track_meta"].get(track_id, {}).get("uri") or f"spotify:track:{track_id}"
 
+def _normalize_playback(playback: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not playback:
+        return {"is_playing": False, "progress_ms": 0, "duration_ms": 0, "device": None, "track": None}
+
+    item = playback.get("item") or {}
+    track = None
+    if item:
+        artists = "; ".join(a.get("name", "") for a in item.get("artists", []) if a.get("name"))
+        track = {
+            "id": item.get("id"),
+            "name": item.get("name", ""),
+            "artists": artists,
+            "uri": item.get("uri", ""),
+            "duration_ms": item.get("duration_ms") or 0,
+        }
+
+    return {
+        "is_playing": bool(playback.get("is_playing")),
+        "progress_ms": playback.get("progress_ms") or 0,
+        "duration_ms": (track or {}).get("duration_ms") or 0,
+        "device": _normalize_device(playback.get("device") or {}) if playback.get("device") else None,
+        "track": track,
+    }
+
 @app.get("/")
 def root():
     return {"status": "ok"}
@@ -298,6 +326,28 @@ def player_pause(req: PlayerPauseRequest):
         sp = _get_sp()
         sp.pause_playback(device_id=req.device_id)
         return {"ok": True}
+    except SpotifyException as e:
+        raise _spotify_http_exception(e)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/player/current")
+def player_current():
+    try:
+        sp = _get_sp()
+        return _normalize_playback(sp.current_playback())
+    except SpotifyException as e:
+        raise _spotify_http_exception(e)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/player/seek")
+def player_seek(req: PlayerSeekRequest):
+    try:
+        sp = _get_sp()
+        position_ms = max(0, int(req.position_ms or 0))
+        sp.seek_track(position_ms=position_ms, device_id=req.device_id)
+        return {"ok": True, "position_ms": position_ms}
     except SpotifyException as e:
         raise _spotify_http_exception(e)
     except Exception as e:

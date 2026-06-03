@@ -64,6 +64,18 @@ export const API = {
     });
     return parseResponse(r, "No se pudo pausar Spotify");
   },
+  async currentPlayback() {
+    const r = await fetch(`${BASE_URL}/player/current`);
+    return parseResponse(r, "No se pudo leer la reproduccion");
+  },
+  async seekPlayback(positionMs, deviceId) {
+    const r = await fetch(`${BASE_URL}/player/seek`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ position_ms: positionMs, device_id: deviceId }),
+    });
+    return parseResponse(r, "No se pudo adelantar la cancion");
+  },
   async sendFeedback(approved, rejected) {
     const r = await fetch(`${BASE_URL}/feedback`, {
       method: "POST",
