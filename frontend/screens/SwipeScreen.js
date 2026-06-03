@@ -147,6 +147,7 @@ export default function SwipeScreen({ route, navigation }) {
       navigation.replace("Playlist", {
         approved: result.approved_total || approved,
         completed: result.added || 0,
+        completedTracks: result.tracks || [],
       });
     } catch (e) {
       setScreenError(e.message || "No se pudo completar la playlist");

@@ -5,6 +5,8 @@ import os
 import time
 import argparse
 import logging
+import re
+import unicodedata
 from typing import List, Dict, Any, Optional
 
 import pandas as pd
@@ -30,8 +32,24 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
+def _normalize_track_text(value: str) -> str:
+    text = unicodedata.normalize("NFKD", value or "")
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.lower()
+    text = re.sub(r"[\(\[][^)\]]*(remaster|remastered|deluxe|mono|stereo|version)[^)\]]*[\)\]]", " ", text)
+    text = re.sub(r"\s+-\s+.*?(remaster|remastered|deluxe|mono|stereo|version).*$", " ", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return " ".join(text.split())
+
+
+def track_duplicate_key(name: str, artists: str) -> str:
+    primary_artist = (artists or "").split(";")[0].strip()
+    return f"{_normalize_track_text(name)}::{_normalize_track_text(primary_artist)}"
+
+
 def build_track_meta(liked_items, artists_by_id):
     meta = {}
+    seen_keys = set()
     for it in liked_items:
         tr = (it or {}).get("track") or {}
         if not tr.get("id"):
@@ -44,12 +62,18 @@ def build_track_meta(liked_items, artists_by_id):
         for aid in artist_ids:
             a = artists_by_id.get(aid, {})
             genres.extend(a.get("genres", []) or [])
+        artists = "; ".join(artist_names)
+        duplicate_key = track_duplicate_key(tr.get("name", ""), artists)
+        if duplicate_key in seen_keys:
+            continue
+        seen_keys.add(duplicate_key)
         meta[tid] = {
             "name": tr.get("name", ""),
             "uri": tr.get("uri", ""),
-            "artists": "; ".join(artist_names),
+            "artists": artists,
             "artist_ids": artist_ids,
             "genres": genres,
+            "duplicate_key": duplicate_key,
             "album_name": tr.get("album", {}).get("name", ""),
             "image_url": ((tr.get("album", {}).get("images") or [{}])[0] or {}).get("url"),
             "preview_url": tr.get("preview_url"),

@@ -25,7 +25,7 @@ _cache: Dict[str, Any] = {
     "sp_user": None, "track_meta": {}, "artists_by_id": {},
     "all_liked_ids": [], "suggestions": [], "shown_ids": set(),
     "approved_ids": set(), "approved_signals": {}, "rejected_signals": {},
-    "final_approved": [], "seed_ids": [], "loaded": False,
+    "rejected_ids": set(), "final_approved": [], "seed_ids": [], "loaded": False,
 }
 
 class SelectSeedRequest(BaseModel):
@@ -90,6 +90,34 @@ def _extract_signals(tid):
             artists.append(name.lower())
     return genres + artists
 
+def _track_key(tid: str) -> str:
+    meta = _cache["track_meta"].get(tid, {})
+    if meta.get("duplicate_key"):
+        return meta["duplicate_key"]
+    try:
+        from main import track_duplicate_key
+        return track_duplicate_key(meta.get("name", ""), meta.get("artists", ""))
+    except Exception:
+        artists = (meta.get("artists", "") or "").split(";")[0].strip().lower()
+        return f"{meta.get('name', '').strip().lower()}::{artists}"
+
+def _keys_for_ids(track_ids) -> set[str]:
+    return {_track_key(tid) for tid in track_ids if tid}
+
+def _card_from_track(tid: str, score: float, meta: Dict[str, Any]) -> Dict[str, Any]:
+    details = _get_track_details(tid)
+    return {
+        "id": tid,
+        "name": meta.get("name", ""),
+        "artists": meta.get("artists", ""),
+        "album": details["album_name"],
+        "score": score,
+        "image_url": details["image_url"],
+        "preview_url": details["preview_url"],
+        "uri": meta.get("uri") or details["uri"],
+        "external_url": details["external_url"],
+    }
+
 def _update_signals(tids, weight, signal_dict):
     for tid in tids:
         for s in _extract_signals(tid):
@@ -100,20 +128,34 @@ def _rescore(suggestions):
     rejected_s = _cache["rejected_signals"]
     shown = _cache["shown_ids"]
     approved = _cache["approved_ids"]
-    rescored = []
+    blocked_keys = _keys_for_ids(shown | approved | set(_cache["final_approved"]) | set(_cache.get("rejected_ids", set())))
+    scored = []
     for tid, base_score, meta in suggestions:
         if tid in approved or tid in shown:
             continue
+        key = _track_key(tid)
+        if key and key in blocked_keys:
+            continue
         signals = _extract_signals(tid)
         if not signals:
-            rescored.append((tid, base_score, meta))
+            scored.append((tid, base_score, meta))
             continue
         bonus = sum(approved_s.get(s, 0.0) for s in signals)
         penalty = sum(rejected_s.get(s, 0.0) for s in signals)
         mp = len(signals)
         score = base_score + (bonus / mp) * 0.4 - (penalty / mp) * 0.5
-        rescored.append((tid, round(max(0.0, min(1.0, score)), 4), meta))
-    rescored.sort(key=lambda x: -x[1])
+        scored.append((tid, round(max(0.0, min(1.0, score)), 4), meta))
+
+    scored.sort(key=lambda x: -x[1])
+    rescored = []
+    seen_keys = set(blocked_keys)
+    for tid, score, meta in scored:
+        key = _track_key(tid)
+        if key and key in seen_keys:
+            continue
+        rescored.append((tid, score, meta))
+        blocked_keys.add(key)
+        seen_keys.add(key)
     return rescored
 
 def _complete_state() -> Dict[str, Any]:
@@ -272,9 +314,14 @@ def search_tracks(q: str):
         raise HTTPException(status_code=400, detail="Primero llama /load")
     q_lower = q.lower()
     results = []
+    seen_keys = set()
     for tid, meta in _cache["track_meta"].items():
+        key = _track_key(tid)
+        if key in seen_keys:
+            continue
         if q_lower in meta.get("name", "").lower() or q_lower in meta.get("artists", "").lower():
             results.append({"id": tid, "name": meta.get("name", ""), "artists": meta.get("artists", "")})
+            seen_keys.add(key)
         if len(results) >= 10:
             break
     return {"results": results}
@@ -290,6 +337,7 @@ def set_seeds(req: SelectSeedRequest):
         _cache["approved_ids"] = set(req.track_ids)
         _cache["approved_signals"] = {}
         _cache["rejected_signals"] = {}
+        _cache["rejected_ids"] = set()
         _cache["final_approved"] = list(req.track_ids)
         _update_signals(req.track_ids, 1.0, _cache["approved_signals"])
         result = suggest_from_seeds(
@@ -326,18 +374,7 @@ def get_next_batch(count: int = 1):
     cards = []
     for tid, score, meta in batch:
         _cache["shown_ids"].add(tid)
-        details = _get_track_details(tid)
-        cards.append({
-            "id": tid,
-            "name": meta.get("name", ""),
-            "artists": meta.get("artists", ""),
-            "album": details["album_name"],
-            "score": score,
-            "image_url": details["image_url"],
-            "preview_url": details["preview_url"],
-            "uri": meta.get("uri") or details["uri"],
-            "external_url": details["external_url"],
-        })
+        cards.append(_card_from_track(tid, score, meta))
     completion = _complete_state()
     completion["remaining"] = max(0, len(pool) - len(batch))
     completion["can_complete"] = bool(completion["selected"] >= completion["min_selected"] and completion["remaining"] > 0)
@@ -353,6 +390,7 @@ def submit_feedback(req: FeedbackRequest):
                 _cache["final_approved"].append(tid)
     if req.rejected:
         _update_signals(req.rejected, 0.6, _cache["rejected_signals"])
+        _cache.setdefault("rejected_ids", set()).update(req.rejected)
     remaining = len(_rescore(_cache["suggestions"])) if _cache["suggestions"] else 0
     top_liked = sorted(_cache["approved_signals"].items(), key=lambda x: -x[1])[:5]
     top_avoid = sorted(_cache["rejected_signals"].items(), key=lambda x: -x[1])[:3]
@@ -387,14 +425,17 @@ def complete_playlist(req: CompletePlaylistRequest):
             "approved_total": current_total,
             "target_total": target_total,
             "remaining": state["remaining"],
+            "tracks": [],
         }
 
     needed = target_total - current_total
     selected = []
-    for tid, _score, _meta in _rescore(_cache["suggestions"]):
+    selected_cards = []
+    for tid, score, meta in _rescore(_cache["suggestions"]):
         if tid in _cache["final_approved"]:
             continue
         selected.append(tid)
+        selected_cards.append(_card_from_track(tid, score, meta))
         if len(selected) >= needed:
             break
 
@@ -411,6 +452,7 @@ def complete_playlist(req: CompletePlaylistRequest):
         "approved_total": len(_cache["final_approved"]),
         "target_total": target_total,
         "remaining": len(_rescore(_cache["suggestions"])),
+        "tracks": selected_cards,
     }
 
 @app.post("/create-playlist")
@@ -425,10 +467,13 @@ def create_playlist(req: CreatePlaylistRequest):
         pid = ensure_playlist(sp, user_id, req.name, req.public)
         existing = get_playlist_track_uris(sp, pid)
         uris = []
+        added_keys = set()
         for tid in _cache["final_approved"]:
             uri = _cache["track_meta"].get(tid, {}).get("uri", "")
-            if uri and uri not in existing and uri not in uris:
+            key = _track_key(tid)
+            if uri and uri not in existing and uri not in uris and key not in added_keys:
                 uris.append(uri)
+                added_keys.add(key)
         if uris:
             add_tracks_in_chunks(sp, pid, uris)
         return {"ok": True, "playlist_name": req.name, "tracks_added": len(uris), "playlist_id": pid}
@@ -439,6 +484,6 @@ def create_playlist(req: CreatePlaylistRequest):
 def reset_session():
     _cache.update({
         "suggestions": [], "shown_ids": set(), "approved_ids": set(),
-        "approved_signals": {}, "rejected_signals": {}, "final_approved": [], "seed_ids": [],
+        "approved_signals": {}, "rejected_signals": {}, "rejected_ids": set(), "final_approved": [], "seed_ids": [],
     })
     return {"ok": True}

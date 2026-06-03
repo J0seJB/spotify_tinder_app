@@ -5,7 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { API } from "../api";
 
 export default function PlaylistScreen({ route, navigation }) {
-  const { approved = 0, completed = 0 } = route.params || {};
+  const { approved = 0, completed = 0, completedTracks = [] } = route.params || {};
   const [name, setName] = useState("Mi playlist IA");
   const [isPublic, setIsPublic] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -53,6 +53,19 @@ export default function PlaylistScreen({ route, navigation }) {
           <Text style={styles.completeNote}>
             Se agregaron {completed} canciones recomendadas antes de guardar.
           </Text>
+        ) : null}
+        {completedTracks.length > 0 ? (
+          <View style={styles.completedList}>
+            {completedTracks.slice(0, 12).map(track => (
+              <View key={track.id} style={styles.completedItem}>
+                <Text style={styles.completedName} numberOfLines={1}>{track.name}</Text>
+                <Text style={styles.completedArtist} numberOfLines={1}>{track.artists}</Text>
+              </View>
+            ))}
+            {completedTracks.length > 12 ? (
+              <Text style={styles.completedMore}>+{completedTracks.length - 12} mas</Text>
+            ) : null}
+          </View>
         ) : null}
 
         <Text style={styles.label}>Nombre</Text>
@@ -112,7 +125,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     marginTop: -20,
+    marginBottom: 12,
+  },
+  completedList: {
+    borderWidth: 1,
+    borderColor: "#242424",
+    borderRadius: 12,
+    overflow: "hidden",
     marginBottom: 28,
+  },
+  completedItem: {
+    backgroundColor: "#141414",
+    borderBottomWidth: 1,
+    borderBottomColor: "#242424",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  completedName: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  completedArtist: { color: "#888", fontSize: 12, marginTop: 2 },
+  completedMore: {
+    backgroundColor: "#101010",
+    color: "#888",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 13,
   },
   label: { color: "#aaa", fontSize: 13, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 },
   input: {

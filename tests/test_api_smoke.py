@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from api import _cache, app
+from main import build_track_meta
 
 
 client = TestClient(app)
@@ -58,6 +59,33 @@ def test_load_does_not_block_on_artist_genre_fetch(monkeypatch):
         _cache.update(original)
 
 
+def test_build_track_meta_deduplicates_same_song_and_artist():
+    liked_items = [
+        {
+            "track": {
+                "id": "track-a",
+                "name": "Iris",
+                "uri": "spotify:track:track-a",
+                "artists": [{"id": "artist-1", "name": "Goo Goo Dolls"}],
+                "album": {"name": "Album A", "images": []},
+            }
+        },
+        {
+            "track": {
+                "id": "track-b",
+                "name": "Iris",
+                "uri": "spotify:track:track-b",
+                "artists": [{"id": "artist-1", "name": "Goo Goo Dolls"}],
+                "album": {"name": "Album B", "images": []},
+            }
+        },
+    ]
+
+    meta = build_track_meta(liked_items, {})
+
+    assert list(meta.keys()) == ["track-a"]
+
+
 def test_next_uses_actual_batch_size_for_remaining(monkeypatch):
     original = _cache.copy()
     try:
@@ -101,8 +129,8 @@ def test_feedback_reports_remaining_after_learning():
     try:
         _cache.update({
             "track_meta": {
-                "track-1": {"artist_ids": ["artist-1"], "uri": "spotify:track:track-1"},
-                "track-2": {"artist_ids": ["artist-1"], "uri": "spotify:track:track-2"},
+                "track-1": {"artist_ids": ["artist-1"], "uri": "spotify:track:track-1", "name": "One", "artists": "A"},
+                "track-2": {"artist_ids": ["artist-1"], "uri": "spotify:track:track-2", "name": "Two", "artists": "A"},
             },
             "artists_by_id": {"artist-1": {"name": "Artist", "genres": ["pop"]}},
             "suggestions": [
@@ -113,6 +141,7 @@ def test_feedback_reports_remaining_after_learning():
             "approved_ids": set(),
             "approved_signals": {},
             "rejected_signals": {},
+            "rejected_ids": set(),
             "final_approved": [],
         })
 
@@ -131,13 +160,13 @@ def test_complete_playlist_adds_best_remaining_tracks():
     try:
         _cache.update({
             "track_meta": {
-                "seed-1": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-1"},
-                "seed-2": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-2"},
-                "seed-3": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-3"},
-                "seed-4": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-4"},
-                "seed-5": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-5"},
-                "track-1": {"artist_ids": ["artist-1"], "uri": "spotify:track:track-1"},
-                "track-2": {"artist_ids": ["artist-2"], "uri": "spotify:track:track-2"},
+                "seed-1": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-1", "name": "Seed 1", "artists": "Artist"},
+                "seed-2": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-2", "name": "Seed 2", "artists": "Artist"},
+                "seed-3": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-3", "name": "Seed 3", "artists": "Artist"},
+                "seed-4": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-4", "name": "Seed 4", "artists": "Artist"},
+                "seed-5": {"artist_ids": ["artist-1"], "uri": "spotify:track:seed-5", "name": "Seed 5", "artists": "Artist"},
+                "track-1": {"artist_ids": ["artist-1"], "uri": "spotify:track:track-1", "name": "One", "artists": "Artist"},
+                "track-2": {"artist_ids": ["artist-2"], "uri": "spotify:track:track-2", "name": "Two", "artists": "Other"},
             },
             "artists_by_id": {
                 "artist-1": {"name": "Artist", "genres": ["rock"]},
@@ -151,6 +180,7 @@ def test_complete_playlist_adds_best_remaining_tracks():
             "approved_ids": {"seed-1", "seed-2", "seed-3", "seed-4", "seed-5"},
             "approved_signals": {"rock": 5.0, "artist": 5.0},
             "rejected_signals": {},
+            "rejected_ids": set(),
             "final_approved": ["seed-1", "seed-2", "seed-3", "seed-4", "seed-5"],
         })
 
@@ -160,8 +190,59 @@ def test_complete_playlist_adds_best_remaining_tracks():
         payload = response.json()
         assert payload["added"] == 1
         assert payload["approved_total"] == 6
+        assert payload["tracks"][0]["name"] == "One"
         assert _cache["final_approved"][-1] == "track-1"
         assert "track-1" in _cache["shown_ids"]
+    finally:
+        _cache.clear()
+        _cache.update(original)
+
+
+def test_next_skips_duplicate_song_versions():
+    original = _cache.copy()
+    try:
+        _cache.update({
+            "track_meta": {
+                "seed-1": {
+                    "artist_ids": [],
+                    "uri": "spotify:track:seed-1",
+                    "name": "Iris",
+                    "artists": "Goo Goo Dolls",
+                    "duplicate_key": "iris::goo goo dolls",
+                },
+                "dup-1": {
+                    "artist_ids": [],
+                    "uri": "spotify:track:dup-1",
+                    "name": "Iris",
+                    "artists": "Goo Goo Dolls",
+                    "duplicate_key": "iris::goo goo dolls",
+                },
+                "track-2": {
+                    "artist_ids": [],
+                    "uri": "spotify:track:track-2",
+                    "name": "Name",
+                    "artists": "Other",
+                    "duplicate_key": "name::other",
+                },
+            },
+            "artists_by_id": {},
+            "suggestions": [
+                ("dup-1", 0.99, {"name": "Iris", "artists": "Goo Goo Dolls"}),
+                ("track-2", 0.8, {"name": "Name", "artists": "Other"}),
+            ],
+            "shown_ids": {"seed-1"},
+            "approved_ids": {"seed-1"},
+            "approved_signals": {},
+            "rejected_signals": {},
+            "rejected_ids": set(),
+            "final_approved": ["seed-1"],
+        })
+
+        response = client.get("/next?count=1")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["cards"][0]["id"] == "track-2"
     finally:
         _cache.clear()
         _cache.update(original)
