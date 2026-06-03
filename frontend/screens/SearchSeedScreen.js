@@ -46,7 +46,6 @@ export default function SearchSeedScreen({ route, navigation }) {
     setSource(nextSource);
     setQuery("");
     setResults([]);
-    setSeeds([]);
     setSearchError("");
   }
 
@@ -108,6 +107,11 @@ export default function SearchSeedScreen({ route, navigation }) {
             ))}
           </View>
         )}
+        {seeds.length > 0 && source === "discover" ? (
+          <Text style={styles.seedHint}>
+            Estas semillas tambien se usaran para buscar musica nueva fuera de tus Me gusta.
+          </Text>
+        ) : null}
 
         <FlatList
           data={results}
@@ -187,6 +191,7 @@ const styles = StyleSheet.create({
   },
   error: { color: "#ff9aa7", fontSize: 13, marginBottom: 12 },
   seedsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 },
+  seedHint: { color: "#777", fontSize: 12, lineHeight: 18, marginTop: -4, marginBottom: 12 },
   seedChip: {
     flexDirection: "row", alignItems: "center", backgroundColor: "#1DB95422",
     borderColor: "#1DB954", borderWidth: 1, borderRadius: 20,
