@@ -23,7 +23,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 _cache: Dict[str, Any] = {
     "sp_user": None, "track_meta": {}, "artists_by_id": {},
-    "all_liked_ids": [], "suggestions": [], "shown_ids": set(),
+    "all_liked_ids": [], "total_saved_tracks": 0, "suggestions": [], "shown_ids": set(),
     "approved_ids": set(), "approved_signals": {}, "rejected_signals": {},
     "rejected_ids": set(), "final_approved": [], "seed_ids": [], "loaded": False,
 }
@@ -75,8 +75,9 @@ def _ensure_loaded(limit=None):
     _cache["artists_by_id"] = artists_by_id
     _cache["track_meta"] = track_meta
     _cache["all_liked_ids"] = list(track_meta.keys())
+    _cache["total_saved_tracks"] = len(liked_items)
     _cache["loaded"] = True
-    logger.info(f"Cargadas {len(track_meta)} canciones.")
+    logger.info(f"Cargadas {len(liked_items)} canciones de Spotify, {len(track_meta)} unicas.")
 
 def _extract_signals(tid):
     meta = _cache["track_meta"].get(tid, {})
@@ -238,6 +239,8 @@ def status():
     return {
         "loaded": _cache["loaded"],
         "total_tracks": len(_cache["all_liked_ids"]),
+        "total_spotify": _cache.get("total_saved_tracks", len(_cache["all_liked_ids"])),
+        "total_unique": len(_cache["all_liked_ids"]),
         "seeds": len(_cache["seed_ids"]),
         "approved": len(_cache["final_approved"]),
         "completion": completion,
@@ -301,10 +304,16 @@ def player_pause(req: PlayerPauseRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/load")
-def load_tracks(limit: int = 3452):
+def load_tracks(limit: Optional[int] = None):
     try:
         _ensure_loaded(limit=limit)
-        return {"ok": True, "total": len(_cache["all_liked_ids"])}
+        return {
+            "ok": True,
+            "total": len(_cache["all_liked_ids"]),
+            "total_spotify": _cache.get("total_saved_tracks", len(_cache["all_liked_ids"])),
+            "total_unique": len(_cache["all_liked_ids"]),
+            "duplicates_removed": max(0, _cache.get("total_saved_tracks", len(_cache["all_liked_ids"])) - len(_cache["all_liked_ids"])),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -21,6 +21,8 @@ def test_status_is_available_without_spotify_session():
     payload = response.json()
     assert payload["loaded"] is False
     assert payload["total_tracks"] == 0
+    assert payload["total_spotify"] == 0
+    assert payload["total_unique"] == 0
     assert payload["seeds"] == 0
     assert payload["approved"] == 0
 
@@ -48,12 +50,19 @@ def test_load_does_not_block_on_artist_genre_fetch(monkeypatch):
             "loaded": False,
         })
 
-        response = client.post("/load?limit=1")
+        response = client.post("/load")
 
         assert response.status_code == 200
-        assert response.json() == {"ok": True, "total": 1}
+        assert response.json() == {
+            "ok": True,
+            "total": 1,
+            "total_spotify": 1,
+            "total_unique": 1,
+            "duplicates_removed": 0,
+        }
         assert _cache["track_meta"]["track-1"]["artists"] == "Artist"
         assert _cache["artists_by_id"] == {}
+        assert _cache["total_saved_tracks"] == 1
     finally:
         _cache.clear()
         _cache.update(original)

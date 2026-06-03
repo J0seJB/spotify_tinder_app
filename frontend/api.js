@@ -14,8 +14,9 @@ async function parseResponse(response, fallbackMessage) {
 }
 
 export const API = {
-  async load(limit = 3452) {
-    const r = await fetch(`${BASE_URL}/load?limit=${limit}`, { method: "POST" });
+  async load(limit) {
+    const suffix = limit ? `?limit=${limit}` : "";
+    const r = await fetch(`${BASE_URL}/load${suffix}`, { method: "POST" });
     return parseResponse(r, "No se pudo cargar la biblioteca");
   },
   async status() {

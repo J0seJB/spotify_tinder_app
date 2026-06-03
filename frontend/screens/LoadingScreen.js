@@ -19,8 +19,12 @@ export default function LoadingScreen({ navigation }) {
   async function loadTracks() {
     try {
       setStatus("Conectando con Spotify...");
-      const res = await API.load(3452);
-      setStatus(`${res.total} canciones listas`);
+      const res = await API.load();
+      if (res.duplicates_removed > 0) {
+        setStatus(`${res.total_spotify} en Spotify, ${res.total_unique} unicas listas`);
+      } else {
+        setStatus(`${res.total_unique || res.total} canciones listas`);
+      }
       setTimeout(() => navigation.replace("SearchSeed"), 1000);
     } catch (e) {
       setStatus(e.message || "Error conectando. Revisa que el servidor este activo.");
