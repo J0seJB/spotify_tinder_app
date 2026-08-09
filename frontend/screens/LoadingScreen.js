@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Text, StyleSheet, ActivityIndicator, Animated, TouchableOpacity } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { API } from "../api";
+import { API, setAccessToken } from "../api";
 
 export default function LoadingScreen({ navigation }) {
   const [status, setStatus] = useState("Conectando...");
+  const [showLogin, setShowLogin] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -20,11 +21,8 @@ export default function LoadingScreen({ navigation }) {
         const m = window.location.hash.match(/access_token=([^&]+)/);
         if (m && m[1]) {
           const token = decodeURIComponent(m[1]);
-          // set token for API calls
-          const { setAccessToken } = require("../api");
           setAccessToken(token);
-          // remove hash from URL
-          history.replaceState(null, '', window.location.pathname + window.location.search);
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
         }
       }
     } catch (err) {
@@ -36,16 +34,18 @@ export default function LoadingScreen({ navigation }) {
 
   async function loadTracks() {
     try {
-      setStatus("Conectando con Spotify...");
+      setStatus('Conectando con Spotify...');
       const res = await API.load(3452);
-      if (res.ok) {
+      if (res.ok && res.total > 0) {
         setStatus(`${res.total} canciones listas`);
-        setTimeout(() => navigation.replace("SearchSeed"), 1000);
-      } else {
-        setStatus("No se pudo cargar la biblioteca.");
+        setTimeout(() => navigation.replace('SearchSeed'), 1000);
+        return;
       }
+      setStatus('Necesitas iniciar sesión con Spotify para usar la app.');
+      setShowLogin(true);
     } catch (e) {
-      setStatus("Error conectando. Esta corriendo el servidor?");
+      setStatus('Error conectando. ¿Está corriendo el servidor?');
+      setShowLogin(true);
     }
   }
 
@@ -57,6 +57,11 @@ export default function LoadingScreen({ navigation }) {
         <Text style={styles.subtitle}>Descubre tu proxima playlist</Text>
         <ActivityIndicator size="large" color="#1DB954" style={{ marginTop: 40 }} />
         <Text style={styles.status}>{status}</Text>
+        {showLogin && typeof window !== 'undefined' ? (
+          <TouchableOpacity style={styles.loginButton} onPress={() => API.login()}>
+            <Text style={styles.loginButtonText}>Iniciar sesión con Spotify</Text>
+          </TouchableOpacity>
+        ) : null}
       </Animated.View>
     </LinearGradient>
   );
@@ -69,4 +74,16 @@ const styles = StyleSheet.create({
   title: { fontSize: 32, fontWeight: "800", color: "#fff", letterSpacing: 1 },
   subtitle: { fontSize: 16, color: "#888", marginTop: 8 },
   status: { fontSize: 14, color: "#1DB954", marginTop: 20, textAlign: "center" },
+  loginButton: {
+    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: "#1DB954",
+    borderRadius: 28,
+  },
+  loginButtonText: {
+    color: "#000",
+    fontWeight: "700",
+    fontSize: 14,
+  },
 });

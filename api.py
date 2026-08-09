@@ -5,7 +5,7 @@
 from __future__ import annotations
 import os, sys, logging
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -44,8 +44,7 @@ def _get_sp():
         _cache["sp_user"] = get_user_client()
     return _cache["sp_user"]
 
-from fastapi import Request, Header
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse
 
 
 def _ensure_loaded(limit=None, access_token: Optional[str] = None):
@@ -139,20 +138,17 @@ def callback(code: Optional[str] = None, state: Optional[str] = None):
 
 
 @app.post("/load")
-def load_tracks(limit: int = 3452, request: Request = None, authorization: Optional[str] = Header(None)):
+def load_tracks(limit: int = 3452, authorization: Optional[str] = Header(None)):
     """Load liked tracks for the authenticated user.
 
     If the frontend provides an Authorization: Bearer <token> header, use that token to load the
     user's library. Otherwise fall back to the server app/user credentials.
     """
-    try:
-        access_token = None
-        if authorization and authorization.lower().startswith("bearer "):
-            access_token = authorization.split(" ", 1)[1]
-        _ensure_loaded(limit=limit, access_token=access_token)
-        return {"ok": True, "total": len(_cache["all_liked_ids"])}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    access_token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        access_token = authorization.split(" ", 1)[1]
+    _ensure_loaded(limit=limit, access_token=access_token)
+    return {"ok": True, "total": len(_cache["all_liked_ids"]) }
 
 def _extract_signals(tid):
     meta = _cache["track_meta"].get(tid, {})
@@ -215,14 +211,6 @@ def status():
         "seeds": len(_cache["seed_ids"]),
         "approved": len(_cache["final_approved"]),
     }
-
-@app.post("/load")
-def load_tracks(limit: int = 3452):
-    try:
-        _ensure_loaded(limit=limit)
-        return {"ok": True, "total": len(_cache["all_liked_ids"])}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/search")
 def search_tracks(q: str):

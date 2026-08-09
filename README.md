@@ -25,7 +25,9 @@ Copia `.env.example` a `.env` y rellena tus credenciales:
 ```
 SPOTIFY_CLIENT_ID=...
 SPOTIFY_CLIENT_SECRET=...
-SPOTIFY_REDIRECT_URI=http://127.0.0.1:9090/callback
+SPOTIFY_REDIRECT_URI=http://localhost:8000/callback
+FRONTEND_URL=http://localhost:19006
+BACKEND_URL=http://localhost:8000
 SPOTIFY_USERNAME=tu_usuario
 
 # Para el análisis IA con Claude:
@@ -33,6 +35,54 @@ ANTHROPIC_API_KEY=...
 
 # Requerido para categorias dinamicas y similitud:
 LASTFM_API_KEY=...
+```
+
+## App Web y despliegue
+
+El backend se ejecuta con FastAPI y el frontend es una app Expo Web.
+
+### Ejecutar localmente
+
+1. Inicia el backend:
+
+```bash
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn api:app --reload --host 0.0.0.0 --port 8000
+```
+
+2. En otra terminal, instala y arranca el frontend:
+
+```bash
+cd frontend
+npm install
+npm run start
+```
+
+3. Abre la web en `http://localhost:19006`.
+
+### Desplegar en Railway + Vercel
+
+- En Railway, configura el proyecto backend y añade estas variables de entorno:
+  - `SPOTIFY_CLIENT_ID`
+  - `SPOTIFY_CLIENT_SECRET`
+  - `SPOTIFY_REDIRECT_URI=https://<TU_BACKEND>/callback`
+  - `FRONTEND_URL=https://<TU_FRONTEND>`
+
+- En Vercel, despliega el frontend desde la carpeta `frontend` y configura:
+  - `BACKEND_URL=https://<TU_BACKEND>`
+
+- En Vercel, usa el comando de build:
+
+```bash
+npm run build
+```
+
+- En Railway, el backend se ejecuta con `Procfile` usando:
+
+```bash
+uvicorn api:app --host 0.0.0.0 --port ${PORT:-8000}
 ```
 
 > ⚠️ **Importante**: Obtén credenciales nuevas de Spotify en https://developer.spotify.com/dashboard

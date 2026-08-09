@@ -1,22 +1,61 @@
-// api.js — Conexión con el backend Python
-// Cambia esta URL por la pública cuando despliegues (p. ej. https://mi-backend.up.railway.app)
-const BASE_URL = "http://192.168.78.172:8000";
+// api.js - Connection with backend Python
+// Change this URL to the public backend when deployed (e.g. https://my-backend.up.railway.app)
+const env = typeof process !== "undefined" ? process.env : {};
+const BASE_URL = env.BACKEND_URL || env.REACT_APP_BACKEND_URL || env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const TOKEN_STORAGE_KEY = "spotify_tinder_access_token";
 
 let ACCESS_TOKEN = null;
+
+function loadStoredToken() {
+  if (ACCESS_TOKEN || typeof window === "undefined") return;
+  try {
+    ACCESS_TOKEN = window.localStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch {
+    ACCESS_TOKEN = null;
+  }
+}
+
+loadStoredToken();
+
 export function setAccessToken(token) {
   ACCESS_TOKEN = token;
+  if (typeof window !== "undefined") {
+    try {
+      if (token) {
+        window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      } else {
+        window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
 }
 
 function authHeaders(headers = {}) {
+  if (!ACCESS_TOKEN) {
+    loadStoredToken();
+  }
   if (ACCESS_TOKEN) {
-    return { ...headers, Authorization: `Bearer ${ACCESS_TOKEN}` };
+    return { ...headers, Authorization: 'Bearer ' + ACCESS_TOKEN };
   }
   return headers;
 }
 
+export function login() {
+  if (typeof window !== "undefined") {
+    window.location.href = BASE_URL + "/login";
+  } else {
+    throw new Error("Login only supported from a browser.");
+  }
+}
+
 export const API = {
   async load(limit = 3452) {
-    const r = await fetch(`${BASE_URL}/load?limit=${limit}`, { method: "POST", headers: authHeaders() });
+    const r = await fetch(`${BASE_URL}/load?limit=${limit}`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
     return r.json();
   },
   async status() {
