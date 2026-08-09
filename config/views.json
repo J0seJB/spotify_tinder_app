@@ -1,0 +1,49 @@
+{
+  "views": [
+    {
+      "name": "Vista · Chill bailable",
+      "filters": {
+        "energy_min": 0.2,
+        "energy_max": 0.65,
+        "valence_min": 0.5,
+        "valence_max": 0.9,
+        "dance_min": 0.6
+      }
+    },
+    {
+      "name": "Vista · Techno amanecer",
+      "filters": {
+        "energy_min": 0.55,
+        "instrumentalness_min": 0.4
+      }
+    },
+    {
+      "name": "Vista · Rap triste ES",
+      "filters": {
+        "valence_max": 0.35,
+        "lang": "ES"
+      }
+    },
+    {
+      "name": "Vista · Salsa/Bachata/Merengue",
+      "filters": {
+        "must_genres": [
+          "salsa",
+          "bachata",
+          "merengue"
+        ]
+      }
+    },
+    {
+      "name": "Vista · Rock alternativo",
+      "filters": {
+        "must_genres": [
+          "alternative rock",
+          "indie rock",
+          "alt rock",
+          "grunge"
+        ]
+      }
+    }
+  ]
+}

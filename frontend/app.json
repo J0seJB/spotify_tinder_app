@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "SpotifyTinder",
+    "slug": "spotify-tinder",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "splash": {
+      "backgroundColor": "#0f0f0f"
+    },
+    "android": {
+      "package": "com.spotifytinder.app",
+      "usesCleartextTraffic": true
+    },
+    "plugins": [
+      "expo-status-bar"
+    ]
+  }
+}
