@@ -79,6 +79,8 @@ npm run start
 npm run build
 ```
 
+> Nota: el repo está configurado con `vercel.json` para que Vercel use automáticamente la carpeta `frontend` como la aplicación web.
+
 - En Railway, el backend se ejecuta con `Procfile` usando:
 
 ```bash

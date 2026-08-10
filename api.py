@@ -53,23 +53,32 @@ def _ensure_loaded(limit=None, access_token: Optional[str] = None):
     If access_token is provided, use it to fetch the user's saved tracks.
     Otherwise fall back to the app/user client configured for the server.
 
-    Errors are caught and the API is kept responsive by setting empty caches.
+    This function keeps the API responsive by using a cached load for the same
+    auth mode, but it also reloads if a different Spotify user token is provided.
     """
     if _cache["loaded"]:
-        return
+        if access_token:
+            if _cache.get("loaded_auth_mode") == "user" and _cache.get("loaded_access_token") == access_token:
+                return
+        elif _cache.get("loaded_auth_mode") == "app":
+            return
+
     from spotify_client import get_user_client, get_app_client, fetch_all_liked, get_artists_info
     from main import build_track_meta
     try:
-        # Prefer using the provided access token for user-specific data
         if access_token:
             import spotipy
             sp_user = spotipy.Spotify(auth=access_token, requests_timeout=20, retries=3)
             sp_app = get_app_client()
             _cache["sp_user"] = sp_user
+            loaded_auth_mode = "user"
+            loaded_access_token = access_token
         else:
             sp_user = get_user_client()
             sp_app = get_app_client()
             _cache["sp_user"] = sp_user
+            loaded_auth_mode = "app"
+            loaded_access_token = None
 
         logger.info("Cargando Me Gusta...")
         liked_items = fetch_all_liked(sp_user, limit=limit)
@@ -85,15 +94,20 @@ def _ensure_loaded(limit=None, access_token: Optional[str] = None):
         _cache["track_meta"] = track_meta
         _cache["all_liked_ids"] = list(track_meta.keys())
         _cache["loaded"] = True
+        _cache["loaded_auth_mode"] = loaded_auth_mode
+        _cache["loaded_access_token"] = loaded_access_token
         logger.info(f"Cargadas {len(track_meta)} canciones.")
     except Exception as e:
-        # Do not raise — keep the API responsive. Provide helpful log message.
+        if access_token:
+            logger.warning(f"No se pudieron cargar Me Gusta para el token proporcionado: {e}")
+            raise
         logger.warning(f"No se pudieron cargar Me Gusta desde Spotify: {e}")
-        # Leave caches empty but mark as loaded to avoid repeated failing attempts.
         _cache["artists_by_id"] = {}
         _cache["track_meta"] = {}
         _cache["all_liked_ids"] = []
         _cache["loaded"] = True
+        _cache["loaded_auth_mode"] = "app"
+        _cache["loaded_access_token"] = None
 
 
 @app.get("/login")
