@@ -173,3 +173,39 @@ def test_spotify_catalog_tracks_can_be_used_as_seeds(monkeypatch):
     finally:
         _cache.clear()
         _cache.update(original)
+
+
+def test_selecting_multiple_releases_of_same_seed_keeps_one(monkeypatch):
+    original = _with_cache_state()
+    try:
+        _cache["track_meta"] = {
+            "original": {
+                "name": "Song",
+                "artists": "Artist One",
+                "artist_ids": ["artist-1"],
+                "uri": "spotify:track:original",
+            },
+            "remaster": {
+                "name": "Song (2015 Remastered)",
+                "artists": "Artist One",
+                "artist_ids": ["artist-1"],
+                "uri": "spotify:track:remaster",
+            },
+        }
+        _cache["artists_by_id"] = {"artist-1": {"name": "Artist One", "genres": []}}
+        monkeypatch.setattr(
+            "ai_playlist.suggest_from_seeds",
+            lambda **kwargs: {
+                "suggestions": [],
+                "profile": {"genres": set(), "tags": [], "dominant_themes": []},
+            },
+        )
+
+        response = client.post("/seeds", json={"track_ids": ["original", "remaster"]})
+
+        assert response.status_code == 200
+        assert response.json()["seeds"] == 1
+        assert _cache["seed_ids"] == ["original"]
+    finally:
+        _cache.clear()
+        _cache.update(original)

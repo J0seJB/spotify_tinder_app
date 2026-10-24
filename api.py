@@ -30,7 +30,7 @@ def _new_session_cache() -> Dict[str, Any]:
         "sp_user": None, "track_meta": {}, "artists_by_id": {},
         "all_liked_ids": [], "suggestions": [], "shown_ids": set(),
         "approved_ids": set(), "approved_signals": {}, "rejected_signals": {},
-        "final_approved": [], "seed_ids": [], "loaded": False,
+        "final_approved": [], "seed_ids": [], "recent_artist_ids": [], "loaded": False,
     }
 
 
@@ -148,6 +148,16 @@ def _ensure_loaded(limit=None, access_token: Optional[str] = None):
                     if a.get("id"):
                         all_artist_ids.append(a["id"])
             artists_by_id = get_artists_info(sp_app, all_artist_ids)
+        if access_token:
+            for item in liked_items:
+                track = (item or {}).get("track") or {}
+                for artist in track.get("artists", []) or []:
+                    artist_id = artist.get("id")
+                    if artist_id:
+                        artists_by_id.setdefault(
+                            artist_id,
+                            {"id": artist_id, "name": artist.get("name", ""), "genres": []},
+                        )
         track_meta = build_track_meta(liked_items, artists_by_id)
         _cache["artists_by_id"] = artists_by_id
         _cache["track_meta"] = track_meta
@@ -316,25 +326,38 @@ def _update_signals(tids, weight, signal_dict):
             signal_dict[s] = signal_dict.get(s, 0.0) + weight
 
 def _rescore(suggestions):
+    from ai_playlist import diversify_suggestions, track_fingerprint
+
     approved_s = _cache["approved_signals"]
     rejected_s = _cache["rejected_signals"]
     shown = _cache["shown_ids"]
     approved = _cache["approved_ids"]
     rescored = []
+    excluded_fingerprints = {
+        track_fingerprint(_cache["track_meta"].get(tid, {}))
+        for tid in shown | approved | set(_cache["seed_ids"])
+    }
+    seen_fingerprints = set(excluded_fingerprints)
     for tid, base_score, meta in suggestions:
         if tid in approved or tid in shown:
             continue
+        track_meta = _cache["track_meta"].get(tid, meta)
+        fingerprint = track_fingerprint(track_meta)
+        if not fingerprint[0] or fingerprint in seen_fingerprints:
+            continue
+        seen_fingerprints.add(fingerprint)
         signals = _extract_signals(tid)
         if not signals:
-            rescored.append((tid, base_score, meta))
+            rescored.append((tid, base_score, track_meta))
             continue
         bonus = sum(approved_s.get(s, 0.0) for s in signals)
         penalty = sum(rejected_s.get(s, 0.0) for s in signals)
         mp = len(signals)
         score = base_score + (bonus / mp) * 0.4 - (penalty / mp) * 0.5
-        rescored.append((tid, round(max(0.0, min(1.0, score)), 4), meta))
+        rescored.append((tid, round(max(0.0, min(1.0, score)), 4), track_meta))
     rescored.sort(key=lambda x: -x[1])
-    return rescored
+    recent_artist_ids = _cache.get("recent_artist_ids", [])
+    return diversify_suggestions(rescored, recent_artist_ids=recent_artist_ids, artist_gap=2)
 
 def _get_track_details(tid: str):
     meta = _cache["track_meta"].get(tid, {})
@@ -476,16 +499,29 @@ def set_seeds(req: SelectSeedRequest):
     if missing_ids:
         raise HTTPException(status_code=400, detail="Busca las canciones semilla antes de seleccionarlas.")
     try:
-        from ai_playlist import suggest_from_seeds
-        _cache["seed_ids"] = req.track_ids
-        _cache["shown_ids"] = set(req.track_ids)
-        _cache["approved_ids"] = set(req.track_ids)
+        from ai_playlist import primary_artist_key, suggest_from_seeds, track_fingerprint
+        seed_ids = []
+        seed_fingerprints = set()
+        for track_id in dict.fromkeys(req.track_ids):
+            fingerprint = track_fingerprint(_cache["track_meta"].get(track_id, {}))
+            if fingerprint[0] and fingerprint not in seed_fingerprints:
+                seed_fingerprints.add(fingerprint)
+                seed_ids.append(track_id)
+        if not seed_ids:
+            raise HTTPException(status_code=400, detail="Selecciona canciones semilla distintas.")
+        _cache["seed_ids"] = seed_ids
+        _cache["shown_ids"] = set(seed_ids)
+        _cache["approved_ids"] = set(seed_ids)
         _cache["approved_signals"] = {}
         _cache["rejected_signals"] = {}
-        _cache["final_approved"] = list(req.track_ids)
-        _update_signals(req.track_ids, 1.0, _cache["approved_signals"])
+        _cache["final_approved"] = list(seed_ids)
+        _cache["recent_artist_ids"] = [
+            key for key in (primary_artist_key(_cache["track_meta"].get(track_id, {})) for track_id in seed_ids)
+            if key
+        ][-2:]
+        _update_signals(seed_ids, 1.0, _cache["approved_signals"])
         result = suggest_from_seeds(
-            seed_track_ids=req.track_ids,
+            seed_track_ids=seed_ids,
             all_liked_ids=_cache["all_liked_ids"],
             features_by_id={},
             artists_by_id=_cache["artists_by_id"],
@@ -496,7 +532,7 @@ def set_seeds(req: SelectSeedRequest):
         _cache["suggestions"] = result["suggestions"]
         return {
             "ok": True,
-            "seeds": len(req.track_ids),
+            "seeds": len(seed_ids),
             "suggestions": len(_cache["suggestions"]),
             "profile": {
                 "genres": list(result["profile"].get("genres", set()))[:6],
@@ -504,6 +540,8 @@ def set_seeds(req: SelectSeedRequest):
                 "themes": result["profile"].get("dominant_themes", []),
             }
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Error en /seeds")
         raise HTTPException(status_code=500, detail=str(e))
@@ -516,8 +554,13 @@ def get_next_batch(count: int = 1):
     pool = _rescore(_cache["suggestions"])
     batch = pool[:count]
     cards = []
+    from ai_playlist import primary_artist_key
+    recent_artist_ids = _cache.get("recent_artist_ids", [])
     for tid, score, meta in batch:
         _cache["shown_ids"].add(tid)
+        artist_key = primary_artist_key(_cache["track_meta"].get(tid, meta))
+        if artist_key:
+            recent_artist_ids.append(artist_key)
         image_url, preview_url, album_name = _get_track_details(tid)
         cards.append({
             "id": tid,
@@ -528,6 +571,7 @@ def get_next_batch(count: int = 1):
             "image_url": image_url,
             "preview_url": preview_url,
         })
+    _cache["recent_artist_ids"] = recent_artist_ids[-2:]
     return {"cards": cards, "remaining": max(0, len(pool) - count)}
 
 @app.post("/feedback")
@@ -584,5 +628,6 @@ def reset_session():
     _cache.update({
         "suggestions": [], "shown_ids": set(), "approved_ids": set(),
         "approved_signals": {}, "rejected_signals": {}, "final_approved": [], "seed_ids": [],
+        "recent_artist_ids": [],
     })
     return {"ok": True}

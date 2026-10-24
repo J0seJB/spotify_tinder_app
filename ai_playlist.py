@@ -11,11 +11,61 @@ from __future__ import annotations
 import os
 import math
 import logging
+import re
+import unicodedata
 from typing import List, Dict, Any, Tuple, Optional
 
 logger = logging.getLogger(__name__)
 
 FEATURE_KEYS = ["energy", "valence", "danceability", "acousticness", "instrumentalness"]
+
+
+def track_fingerprint(meta: Dict[str, Any]) -> tuple[str, str]:
+    def normalize(value: str) -> str:
+        value = unicodedata.normalize("NFKD", value or "")
+        value = "".join(char for char in value if not unicodedata.combining(char))
+        value = re.sub(r"\s*[\[(](?:\s*(?:\d{4}\s+)?(?:remaster(?:ed)?|deluxe|radio edit|single version|album version|explicit|clean|mono|stereo)[^\])]*|live[^)\]]*)[\])]", "", value, flags=re.IGNORECASE)
+        return " ".join(re.sub(r"[^a-z0-9]+", " ", value.lower()).split())
+
+    artists = meta.get("artists", "")
+    if isinstance(artists, list):
+        artist_name = artists[0] if artists else ""
+    else:
+        artist_name = str(artists).split(";")[0]
+    return normalize(meta.get("name", "")), normalize(artist_name)
+
+
+def primary_artist_key(meta: Dict[str, Any]) -> str:
+    artist_ids = meta.get("artist_ids") or []
+    if artist_ids:
+        return f"id:{artist_ids[0]}"
+    _, artist_name = track_fingerprint(meta)
+    return f"name:{artist_name}" if artist_name else ""
+
+
+def diversify_suggestions(
+    suggestions: List[Tuple[str, float, Dict[str, Any]]],
+    recent_artist_ids: Optional[List[str]] = None,
+    artist_gap: int = 2,
+) -> List[Tuple[str, float, Dict[str, Any]]]:
+    remaining = list(suggestions)
+    ordered = []
+    recent = list(recent_artist_ids or [])
+    while remaining:
+        blocked = set(recent[-artist_gap:]) if artist_gap else set()
+        selected_index = next(
+            (
+                index for index, (_, _, meta) in enumerate(remaining)
+                if not primary_artist_key(meta) or primary_artist_key(meta) not in blocked
+            ),
+            0,
+        )
+        item = remaining.pop(selected_index)
+        ordered.append(item)
+        artist_key = primary_artist_key(item[2])
+        if artist_key:
+            recent.append(artist_key)
+    return ordered
 
 
 # ─────────────────────────────────────────
@@ -169,8 +219,9 @@ def score_candidates(
         weighted_genre = sum(seed_genre_count.get(g, 0) for g in cand_genres if g in seed_genres)
         genre_score = min(1.0, weighted_genre / total_genre_weight)
 
-        # 4. Bonus por artista compartido
-        artist_bonus = 0.20 if cand_artists & seed_artists else 0.0
+        # Keep seed artists relevant without letting them crowd out other artists.
+        shares_seed_artist = bool(cand_artists & seed_artists)
+        artist_bonus = 0.03 if shares_seed_artist else 0.12
 
         # Combinar scores según disponibilidad
         if lfm_direct > 0:
@@ -326,8 +377,22 @@ def suggest_from_seeds(
         profile, candidates, track_meta, artists_by_id,
         lfm_data, lastfm_similar,
         exclude_ids=set(seed_track_ids),
-        top_n=top_n,
+        top_n=len(candidates),
     )
+
+    seed_fingerprints = {
+        track_fingerprint(track_meta.get(track_id, {}))
+        for track_id in seed_track_ids
+    }
+    seen_fingerprints = set(seed_fingerprints)
+    deduplicated = []
+    for suggestion in suggestions:
+        fingerprint = track_fingerprint(suggestion[2])
+        if not fingerprint[0] or fingerprint in seen_fingerprints:
+            continue
+        seen_fingerprints.add(fingerprint)
+        deduplicated.append(suggestion)
+    suggestions = deduplicated
 
     # ── Reordenar con similitud de letras (top 30) ──
     seed_themes = profile.get("genius_themes", {})
@@ -353,6 +418,7 @@ def suggest_from_seeds(
         except ImportError:
             pass
 
+    suggestions = diversify_suggestions(suggestions)[:top_n]
     logger.info(f"Sugerencias generadas: {len(suggestions)}")
 
     # Descripción con Claude AI
