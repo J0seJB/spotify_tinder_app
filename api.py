@@ -270,7 +270,7 @@ def _rescore(suggestions):
 
 def _get_track_details(tid: str):
     meta = _cache["track_meta"].get(tid, {})
-    if meta.get("image_url") or meta.get("preview_url") or meta.get("album_name"):
+    if "image_url" in meta or "preview_url" in meta or "album_name" in meta:
         return meta.get("image_url"), meta.get("preview_url"), meta.get("album_name", "")
     try:
         sp = _get_sp()

@@ -39,6 +39,9 @@ def build_track_meta(liked_items, artists_by_id):
         artist_objs = tr.get("artists", []) or []
         artist_names = [a.get("name", "") for a in artist_objs if a.get("name")]
         artist_ids = [a.get("id", "") for a in artist_objs if a.get("id")]
+        album = tr.get("album") or {}
+        album_images = album.get("images") or []
+        image_url = album_images[0].get("url") if album_images else None
         genres = []
         for aid in artist_ids:
             a = artists_by_id.get(aid, {})
@@ -49,6 +52,9 @@ def build_track_meta(liked_items, artists_by_id):
             "artists": "; ".join(artist_names),
             "artist_ids": artist_ids,
             "genres": genres,
+            "album_name": album.get("name", ""),
+            "image_url": image_url,
+            "preview_url": tr.get("preview_url"),
         }
     return meta
 

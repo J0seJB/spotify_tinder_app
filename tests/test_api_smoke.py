@@ -95,6 +95,31 @@ def test_build_track_meta_deduplicates_same_song_and_artist():
     assert list(meta.keys()) == ["track-a"]
 
 
+def test_build_track_meta_keeps_album_art_for_cards():
+    liked_items = [{
+        "track": {
+            "id": "track-art",
+            "name": "Cover song",
+            "uri": "spotify:track:track-art",
+            "preview_url": "https://audio.example/preview.mp3",
+            "artists": [{"id": "artist-1", "name": "Artist"}],
+            "album": {
+                "name": "Album",
+                "images": [
+                    {"url": "https://images.example/large.jpg", "width": 640, "height": 640},
+                    {"url": "https://images.example/small.jpg", "width": 64, "height": 64},
+                ],
+            },
+        }
+    }]
+
+    meta = build_track_meta(liked_items, {})
+
+    assert meta["track-art"]["album_name"] == "Album"
+    assert meta["track-art"]["image_url"] == "https://images.example/large.jpg"
+    assert meta["track-art"]["preview_url"] == "https://audio.example/preview.mp3"
+
+
 def test_next_uses_actual_batch_size_for_remaining(monkeypatch):
     original = _cache.copy()
     try:
@@ -128,6 +153,42 @@ def test_next_uses_actual_batch_size_for_remaining(monkeypatch):
         assert payload["remaining"] == 0
         assert payload["cards"][0]["album"] == "Album"
         assert payload["cards"][0]["image_url"] == "https://example.com/cover.jpg"
+    finally:
+        _cache.clear()
+        _cache.update(original)
+
+
+def test_next_uses_cached_cover_without_additional_spotify_request(monkeypatch):
+    original = _cache.copy()
+    try:
+        monkeypatch.setattr(
+            "api._get_sp",
+            lambda: (_ for _ in ()).throw(AssertionError("cached cover should not call Spotify again")),
+        )
+        _cache.update({
+            "track_meta": {
+                "track-art": {
+                    "name": "Cover song",
+                    "artists": "Artist",
+                    "album_name": "Album",
+                    "image_url": "https://images.example/large.jpg",
+                    "preview_url": None,
+                    "uri": "spotify:track:track-art",
+                    "artist_ids": [],
+                }
+            },
+            "artists_by_id": {},
+            "suggestions": [("track-art", 0.9, {"name": "Cover song", "artists": "Artist", "uri": "spotify:track:track-art"})],
+            "shown_ids": set(),
+            "approved_ids": set(),
+            "approved_signals": {},
+            "rejected_signals": {},
+        })
+
+        response = client.get("/next")
+
+        assert response.status_code == 200
+        assert response.json()["cards"][0]["image_url"] == "https://images.example/large.jpg"
     finally:
         _cache.clear()
         _cache.update(original)
