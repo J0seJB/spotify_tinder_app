@@ -55,7 +55,7 @@ export const API = {
   login,
   async load(limit = 3452) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000);
+    const timeout = setTimeout(() => controller.abort(), 300000);
     try {
       const response = await fetch(`${BASE_URL}/load?limit=${limit}`, {
         method: "POST",
@@ -69,7 +69,7 @@ export const API = {
       return result;
     } catch (error) {
       if (error.name === "AbortError") {
-        throw new Error("La carga de Spotify tardó demasiado. Comprueba tu conexión e inténtalo de nuevo.");
+        throw new Error("La carga de Spotify tardó más de cinco minutos. Comprueba tu conexión e inténtalo de nuevo.");
       }
       throw error;
     } finally {

@@ -24,9 +24,10 @@ export default function PlaylistScreen({ route, navigation }) {
         setError(res.detail || "Error creando playlist");
       }
     } catch (e) {
-      setError("No se pudo conectar con el servidor");
+      setError(e.message || "No se pudo conectar con Spotify. Comprueba tu conexión e inténtalo de nuevo.");
+    } finally {
+      setCreating(false);
     }
-    setCreating(false);
   }
 
   async function startOver() {
@@ -69,6 +70,11 @@ export default function PlaylistScreen({ route, navigation }) {
       </TouchableOpacity>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <TouchableOpacity style={styles.reloginBtn} onPress={() => API.login()}>
+          <Text style={styles.reloginText}>Volver a conectar Spotify</Text>
+        </TouchableOpacity>
+      ) : null}
 
       <TouchableOpacity
         style={[styles.btn, creating && styles.btnDisabled]}
@@ -109,6 +115,8 @@ const styles = StyleSheet.create({
   toggleThumbOn: { backgroundColor: "#1DB954", alignSelf: "flex-end" },
   toggleLabel: { color: "#aaa", fontSize: 15, marginLeft: 12 },
   error: { color: "#ff4458", marginBottom: 16, fontSize: 14 },
+  reloginBtn: { alignSelf: "flex-start", paddingVertical: 8, marginBottom: 12 },
+  reloginText: { color: "#1DB954", fontSize: 14, fontWeight: "700" },
   btn: {
     backgroundColor: "#1DB954", borderRadius: 14,
     padding: 18, alignItems: "center", marginBottom: 16,

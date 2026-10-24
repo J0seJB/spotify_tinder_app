@@ -7,6 +7,7 @@ export default function LoadingScreen({ navigation }) {
   const [status, setStatus] = useState("Conectando...");
   const [showLogin, setShowLogin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [waiting, setWaiting] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -32,6 +33,15 @@ export default function LoadingScreen({ navigation }) {
 
     loadTracks();
   }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      setWaiting(false);
+      return undefined;
+    }
+    const timeout = setTimeout(() => setWaiting(true), 15000);
+    return () => clearTimeout(timeout);
+  }, [loading]);
 
   async function loadTracks() {
     setLoading(true);
@@ -63,7 +73,7 @@ export default function LoadingScreen({ navigation }) {
         <Text style={styles.title}>Spotify Tinder</Text>
         <Text style={styles.subtitle}>Descubre tu proxima playlist</Text>
         {loading ? <ActivityIndicator size="large" color="#1DB954" style={{ marginTop: 40 }} /> : null}
-        <Text style={styles.status}>{status}</Text>
+        <Text style={styles.status}>{waiting && loading ? "Spotify tarda en responder; sigo cargando tu biblioteca..." : status}</Text>
         {showLogin && typeof window !== 'undefined' ? (
           <>
             <TouchableOpacity style={styles.loginButton} onPress={loadTracks}>
