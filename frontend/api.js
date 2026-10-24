@@ -1,7 +1,8 @@
 // api.js - Connection with backend Python
 // Change this URL to the public backend when deployed (e.g. https://my-backend.up.railway.app)
-const env = typeof process !== "undefined" ? process.env : {};
-const BASE_URL = env.BACKEND_URL || env.REACT_APP_BACKEND_URL || env.EXPO_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BASE_URL =
+  (typeof process !== "undefined" && process.env.EXPO_PUBLIC_BACKEND_URL) ||
+  "http://localhost:8000";
 const TOKEN_STORAGE_KEY = "spotify_tinder_access_token";
 
 let ACCESS_TOKEN = null;

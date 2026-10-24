@@ -25,6 +25,7 @@ metro.out.log
 
 # Build
 web-build/
+frontend/dist/
 
 # Misc
 .DS_Store
