@@ -3,9 +3,11 @@
 # Corre con: uvicorn api:app --reload --host 0.0.0.0 --port 8000
 
 from __future__ import annotations
-import os, sys, logging
+import os, sys, logging, secrets
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, Header
+from urllib.parse import urlencode, quote, urlsplit
+import requests
+from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -111,44 +113,96 @@ def _ensure_loaded(limit=None, access_token: Optional[str] = None):
 
 
 @app.get("/login")
-def login():
+def login(request: Request):
     """Redirect user to Spotify authorization page."""
-    try:
-        from spotipy.oauth2 import SpotifyOAuth
-        cid = os.getenv("SPOTIFY_CLIENT_ID")
-        sec = os.getenv("SPOTIFY_CLIENT_SECRET")
-        redirect = os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8000/callback")
-        scope = "user-library-read playlist-modify-public playlist-modify-private"
-        auth = SpotifyOAuth(client_id=cid, client_secret=sec, redirect_uri=redirect, scope=scope)
-        url = auth.get_authorize_url()
-        return RedirectResponse(url)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    cid = os.getenv("SPOTIFY_CLIENT_ID")
+    redirect = os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8000/callback")
+    if not cid or not os.getenv("SPOTIFY_CLIENT_SECRET"):
+        raise HTTPException(status_code=500, detail="Faltan credenciales de Spotify en el backend.")
+
+    state = secrets.token_urlsafe(32)
+    scope = "user-library-read playlist-modify-public playlist-modify-private"
+    url = "https://accounts.spotify.com/authorize?" + urlencode({
+        "client_id": cid,
+        "response_type": "code",
+        "redirect_uri": redirect,
+        "scope": scope,
+        "state": state,
+    })
+    response = RedirectResponse(url)
+    response.set_cookie(
+        "spotify_oauth_state",
+        state,
+        max_age=600,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+        path="/callback",
+    )
+    return response
 
 
 @app.get("/callback")
-def callback(code: Optional[str] = None, state: Optional[str] = None):
-    """Exchange authorization code for an access token and redirect to frontend with token in fragment.
+def callback(
+    request: Request,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+):
+    """Exchange a one-time authorization code and return the token to the SPA."""
+    expected_state = request.cookies.get("spotify_oauth_state")
+    if not state or not expected_state or not secrets.compare_digest(state, expected_state):
+        raise HTTPException(status_code=400, detail="La autorización expiró o no es válida. Intenta iniciar sesión otra vez.")
+    if error or not code:
+        raise HTTPException(status_code=400, detail="Spotify no completó la autorización.")
 
-    The frontend should capture the access_token from the URL fragment and use it for API calls
-    (e.g., include Authorization: Bearer <token> in requests).
-    """
+    client_id = os.getenv("SPOTIFY_CLIENT_ID")
+    client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+    redirect_uri = os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8000/callback")
+    frontend = os.getenv("FRONTEND_URL", "http://localhost:19006")
+    frontend_parts = urlsplit(frontend)
+    if (
+        frontend_parts.scheme not in ("http", "https")
+        or not frontend_parts.netloc
+        or frontend_parts.query
+        or frontend_parts.fragment
+    ):
+        raise HTTPException(
+            status_code=500,
+            detail="FRONTEND_URL debe ser una URL completa, por ejemplo https://tu-app.vercel.app",
+        )
+
     try:
-        from spotipy.oauth2 import SpotifyOAuth
-        cid = os.getenv("SPOTIFY_CLIENT_ID")
-        sec = os.getenv("SPOTIFY_CLIENT_SECRET")
-        redirect = os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8000/callback")
-        scope = "user-library-read playlist-modify-public playlist-modify-private"
-        auth = SpotifyOAuth(client_id=cid, client_secret=sec, redirect_uri=redirect, scope=scope)
-        token_info = auth.get_access_token(code)
-        access_token = token_info.get("access_token") if isinstance(token_info, dict) else token_info
-        frontend = os.getenv("FRONTEND_URL", "http://localhost:19006")
-        # Redirect with token in fragment so it is not sent to the server in logs
-        redirect_url = f"{frontend}#access_token={access_token}"
-        return RedirectResponse(redirect_url)
-    except Exception as e:
-        logger.exception("Error during Spotify callback")
-        raise HTTPException(status_code=500, detail=str(e))
+        response = requests.post(
+            "https://accounts.spotify.com/api/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+            },
+            auth=(client_id or "", client_secret or ""),
+            timeout=20,
+        )
+        response.raise_for_status()
+        token_info = response.json()
+    except requests.RequestException:
+        logger.exception("Spotify token exchange failed")
+        raise HTTPException(status_code=502, detail="Spotify no pudo completar el inicio de sesión.")
+
+    access_token = token_info.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=502, detail="Spotify no devolvió un token de acceso.")
+
+    redirect_url = f"{frontend.rstrip('/')}#access_token={quote(access_token, safe='')}"
+    result = RedirectResponse(redirect_url)
+    result.delete_cookie(
+        "spotify_oauth_state",
+        path="/callback",
+        secure=request.url.scheme == "https",
+        httponly=True,
+        samesite="lax",
+    )
+    return result
 
 
 @app.post("/load")

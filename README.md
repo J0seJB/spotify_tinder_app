@@ -71,7 +71,7 @@ El backend usa `render.yaml` y `requirements-web.txt` para desplegar únicamente
   - `SPOTIFY_CLIENT_ID`
   - `SPOTIFY_CLIENT_SECRET`
   - `SPOTIFY_REDIRECT_URI=https://<TU_SERVICIO>.onrender.com/callback`
-  - `FRONTEND_URL=https://<TU_FRONTEND>`
+  - `FRONTEND_URL=https://<TU_DOMINIO_VERCEL>` (incluye `https://`, sin rutas ni fragmentos)
 3. Añade exactamente `SPOTIFY_REDIRECT_URI` a la lista **Redirect URIs** de tu aplicación en Spotify Developer Dashboard y guarda los cambios.
 4. En Vercel, conserva el frontend y configura `BACKEND_URL=https://<TU_SERVICIO>.onrender.com`; luego vuelve a desplegar el frontend.
 
