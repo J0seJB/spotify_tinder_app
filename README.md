@@ -62,18 +62,20 @@ npm run start
 
 3. Abre la web en `http://localhost:19006`.
 
-### Desplegar en Railway + Vercel
+### Desplegar en Render + Vercel
 
-- En Railway, configura el proyecto backend y añade estas variables de entorno:
+El backend usa `render.yaml` y `requirements-web.txt` para desplegar únicamente las dependencias necesarias para la API, sin instalar los paquetes pesados usados por los scripts locales de análisis.
+
+1. En Render, crea un **Blueprint** desde este repositorio. Render detectará `render.yaml` y creará el servicio web gratuito `spotify-tinder-api`.
+2. En el servicio de Render, configura estas variables de entorno:
   - `SPOTIFY_CLIENT_ID`
   - `SPOTIFY_CLIENT_SECRET`
-  - `SPOTIFY_REDIRECT_URI=https://<TU_BACKEND>/callback`
+  - `SPOTIFY_REDIRECT_URI=https://<TU_SERVICIO>.onrender.com/callback`
   - `FRONTEND_URL=https://<TU_FRONTEND>`
+3. Añade exactamente `SPOTIFY_REDIRECT_URI` a la lista **Redirect URIs** de tu aplicación en Spotify Developer Dashboard y guarda los cambios.
+4. En Vercel, conserva el frontend y configura `BACKEND_URL=https://<TU_SERVICIO>.onrender.com`; luego vuelve a desplegar el frontend.
 
-- En Vercel, despliega el frontend desde la carpeta `frontend` y configura:
-  - `BACKEND_URL=https://<TU_BACKEND>`
-
-- En Vercel, usa el comando de build:
+En Vercel, el comando de build es:
 
 ```bash
 npm run build
@@ -81,11 +83,13 @@ npm run build
 
 > Nota: el repo está configurado con `vercel.json` para que Vercel use automáticamente la carpeta `frontend` como la aplicación web.
 
-- En Railway, el backend se ejecuta con `Procfile` usando:
+Render comprueba la salud del servicio mediante `/status` y lo inicia con:
 
 ```bash
-uvicorn api:app --host 0.0.0.0 --port ${PORT:-8000}
+uvicorn api:app --host 0.0.0.0 --port $PORT
 ```
+
+> El plan gratuito de Render puede suspender el backend tras un periodo sin tráfico; la primera solicitud posterior puede tardar alrededor de un minuto. No uses el sistema de archivos local del servicio para guardar datos permanentes.
 
 > ⚠️ **Importante**: Obtén credenciales nuevas de Spotify en https://developer.spotify.com/dashboard
 > Las credenciales que tenías en el .env anterior estaban expuestas — debes regenerarlas.
