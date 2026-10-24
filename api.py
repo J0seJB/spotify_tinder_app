@@ -72,26 +72,27 @@ def _ensure_loaded(limit=None, access_token: Optional[str] = None):
         if access_token:
             import spotipy
             sp_user = spotipy.Spotify(auth=access_token, requests_timeout=20, retries=3)
-            sp_app = get_app_client()
             _cache["sp_user"] = sp_user
             loaded_auth_mode = "user"
             loaded_access_token = access_token
+            logger.info("Cargando biblioteca Spotify del usuario autenticado...")
+            liked_items = fetch_all_liked(sp_user, limit=limit, raise_on_error=True)
+            artists_by_id = {}
         else:
             sp_user = get_user_client()
             sp_app = get_app_client()
             _cache["sp_user"] = sp_user
             loaded_auth_mode = "app"
             loaded_access_token = None
-
-        logger.info("Cargando Me Gusta...")
-        liked_items = fetch_all_liked(sp_user, limit=limit)
-        all_artist_ids = []
-        for it in liked_items:
-            tr = it.get("track") or {}
-            for a in tr.get("artists", []) or []:
-                if a.get("id"):
-                    all_artist_ids.append(a["id"])
-        artists_by_id = get_artists_info(sp_app, all_artist_ids)
+            logger.info("Cargando Me Gusta...")
+            liked_items = fetch_all_liked(sp_user, limit=limit)
+            all_artist_ids = []
+            for it in liked_items:
+                tr = it.get("track") or {}
+                for a in tr.get("artists", []) or []:
+                    if a.get("id"):
+                        all_artist_ids.append(a["id"])
+            artists_by_id = get_artists_info(sp_app, all_artist_ids)
         track_meta = build_track_meta(liked_items, artists_by_id)
         _cache["artists_by_id"] = artists_by_id
         _cache["track_meta"] = track_meta
@@ -216,8 +217,19 @@ def load_tracks(limit: int = 3452, authorization: Optional[str] = Header(None)):
     access_token = None
     if authorization and authorization.lower().startswith("bearer "):
         access_token = authorization.split(" ", 1)[1]
-    _ensure_loaded(limit=limit, access_token=access_token)
-    return {"ok": True, "total": len(_cache["all_liked_ids"]) }
+    try:
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Inicia sesión con Spotify para cargar tu biblioteca.")
+        _ensure_loaded(limit=limit, access_token=access_token)
+        return {"ok": True, "total": len(_cache["all_liked_ids"])}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("No se pudo cargar la biblioteca del usuario autenticado")
+        raise HTTPException(
+            status_code=502,
+            detail="Spotify rechazó la carga de tu biblioteca. Vuelve a iniciar sesión y acepta el permiso para leer tu biblioteca.",
+        ) from exc
 
 def _extract_signals(tid):
     meta = _cache["track_meta"].get(tid, {})
@@ -472,12 +484,18 @@ def submit_feedback(req: FeedbackRequest):
     }
 
 @app.post("/create-playlist")
-def create_playlist(req: CreatePlaylistRequest):
+def create_playlist(req: CreatePlaylistRequest, authorization: Optional[str] = Header(None)):
     if not _cache["final_approved"]:
         raise HTTPException(status_code=400, detail="No hay canciones aprobadas")
+    access_token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        access_token = authorization.split(" ", 1)[1].strip()
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Inicia sesión con Spotify antes de guardar la playlist.")
     try:
         from spotify_client import ensure_playlist, get_playlist_track_uris, add_tracks_in_chunks
-        sp = _get_sp()
+        import spotipy
+        sp = spotipy.Spotify(auth=access_token, requests_timeout=20, retries=3)
         me = sp.current_user()
         user_id = me["id"]
         pid = ensure_playlist(sp, user_id, req.name, req.public)

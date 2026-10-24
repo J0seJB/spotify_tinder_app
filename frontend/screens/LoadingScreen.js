@@ -6,6 +6,7 @@ import { API, setAccessToken } from "../api";
 export default function LoadingScreen({ navigation }) {
   const [status, setStatus] = useState("Conectando...");
   const [showLogin, setShowLogin] = useState(false);
+  const [loading, setLoading] = useState(true);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -33,6 +34,8 @@ export default function LoadingScreen({ navigation }) {
   }, []);
 
   async function loadTracks() {
+    setLoading(true);
+    setShowLogin(false);
     try {
       setStatus('Conectando con Spotify...');
       const res = await API.load(3452);
@@ -41,11 +44,15 @@ export default function LoadingScreen({ navigation }) {
         setTimeout(() => navigation.replace('SearchSeed'), 1000);
         return;
       }
-      setStatus('Necesitas iniciar sesión con Spotify para usar la app.');
+      setStatus(res.total === 0
+        ? 'No encontramos canciones guardadas. Añade canciones a tu biblioteca de Spotify e inténtalo de nuevo.'
+        : 'No se pudo cargar la biblioteca de Spotify.');
       setShowLogin(true);
     } catch (e) {
-      setStatus('Error conectando. ¿Está corriendo el servidor?');
+      setStatus(e.message || 'No se pudo conectar con Spotify. Inténtalo de nuevo.');
       setShowLogin(true);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -55,12 +62,17 @@ export default function LoadingScreen({ navigation }) {
         <Text style={styles.logo}>Music</Text>
         <Text style={styles.title}>Spotify Tinder</Text>
         <Text style={styles.subtitle}>Descubre tu proxima playlist</Text>
-        <ActivityIndicator size="large" color="#1DB954" style={{ marginTop: 40 }} />
+        {loading ? <ActivityIndicator size="large" color="#1DB954" style={{ marginTop: 40 }} /> : null}
         <Text style={styles.status}>{status}</Text>
         {showLogin && typeof window !== 'undefined' ? (
-          <TouchableOpacity style={styles.loginButton} onPress={() => API.login()}>
-            <Text style={styles.loginButtonText}>Iniciar sesión con Spotify</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity style={styles.loginButton} onPress={loadTracks}>
+              <Text style={styles.loginButtonText}>Reintentar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.loginButtonSecondary} onPress={() => API.login()}>
+              <Text style={styles.loginButtonSecondaryText}>Volver a iniciar sesión</Text>
+            </TouchableOpacity>
+          </>
         ) : null}
       </Animated.View>
     </LinearGradient>
@@ -86,4 +98,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 14,
   },
+  loginButtonSecondary: { marginTop: 12, padding: 10 },
+  loginButtonSecondaryText: { color: "#aaa", fontSize: 13, fontWeight: "600" },
 });

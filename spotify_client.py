@@ -60,7 +60,11 @@ def batched(iterable, n: int = 100):
         yield buf
 
 
-def fetch_all_liked(sp: spotipy.Spotify, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+def fetch_all_liked(
+    sp: spotipy.Spotify,
+    limit: Optional[int] = None,
+    raise_on_error: bool = False,
+) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
     offset = 0
     batch = 50
@@ -79,6 +83,9 @@ def fetch_all_liked(sp: spotipy.Spotify, limit: Optional[int] = None) -> List[Di
             pbar.update(len(items))
         except SpotifyException as e:
             logger.error(f"Error al obtener Me Gusta: {e}")
+            if raise_on_error:
+                pbar.close()
+                raise
             break
     pbar.close()
     return results

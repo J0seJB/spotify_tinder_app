@@ -54,11 +54,27 @@ export function login() {
 export const API = {
   login,
   async load(limit = 3452) {
-    const r = await fetch(`${BASE_URL}/load?limit=${limit}`, {
-      method: "POST",
-      headers: authHeaders(),
-    });
-    return r.json();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000);
+    try {
+      const response = await fetch(`${BASE_URL}/load?limit=${limit}`, {
+        method: "POST",
+        headers: authHeaders(),
+        signal: controller.signal,
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.detail || `Error HTTP ${response.status}`);
+      }
+      return result;
+    } catch (error) {
+      if (error.name === "AbortError") {
+        throw new Error("La carga de Spotify tardó demasiado. Comprueba tu conexión e inténtalo de nuevo.");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   },
   async status() {
     const r = await fetch(`${BASE_URL}/status`, { headers: authHeaders() });
@@ -102,7 +118,11 @@ export const API = {
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ name, public: isPublic }),
     });
-    return r.json();
+    const result = await r.json();
+    if (!r.ok) {
+      throw new Error(result.detail || `Error HTTP ${r.status}`);
+    }
+    return result;
   },
   async reset() {
     const r = await fetch(`${BASE_URL}/reset`, { method: "DELETE", headers: authHeaders() });
