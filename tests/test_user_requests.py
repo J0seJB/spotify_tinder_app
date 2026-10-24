@@ -60,7 +60,34 @@ def test_load_uses_the_authenticated_users_token_without_app_credentials(monkeyp
         _cache.update(original)
 
 
-def test_load_returns_actionable_error_when_spotify_rejects_library_access(monkeypatch):
+def test_load_returns_actionable_error_for_unexpected_library_failure(monkeypatch):
+    original = _save_cache()
+    try:
+        class FakeSpotify:
+            def __init__(self, **kwargs):
+                pass
+
+        monkeypatch.setattr(spotipy, "Spotify", FakeSpotify)
+        monkeypatch.setattr(
+            "spotify_client.fetch_all_liked",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                RuntimeError("temporary upstream failure")
+            ),
+        )
+
+        response = client.post(
+            "/load",
+            headers={"Authorization": "Bearer friend-access-token"},
+        )
+
+        assert response.status_code == 502
+        assert "Vuelve a iniciar sesión" in response.json()["detail"]
+    finally:
+        _cache.clear()
+        _cache.update(original)
+
+
+def test_load_explains_spotify_development_allowlist_for_forbidden_user(monkeypatch):
     original = _save_cache()
     try:
         class FakeSpotify:
@@ -80,8 +107,9 @@ def test_load_returns_actionable_error_when_spotify_rejects_library_access(monke
             headers={"Authorization": "Bearer friend-access-token"},
         )
 
-        assert response.status_code == 502
-        assert "Vuelve a iniciar sesión" in response.json()["detail"]
+        assert response.status_code == 403
+        assert "Users Management" in response.json()["detail"]
+        assert "Spotify Premium" in response.json()["detail"]
     finally:
         _cache.clear()
         _cache.update(original)

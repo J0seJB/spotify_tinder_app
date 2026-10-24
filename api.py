@@ -226,6 +226,21 @@ def load_tracks(limit: int = 3452, authorization: Optional[str] = Header(None)):
         raise
     except Exception as exc:
         logger.exception("No se pudo cargar la biblioteca del usuario autenticado")
+        if getattr(exc, "http_status", None) == 403:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Spotify denegó el acceso a esta cuenta. Si tu app está en Development mode, "
+                    "añade el correo exacto de esta cuenta Spotify en Spotify Developer Dashboard → "
+                    "tu app → Settings → Users Management, acepta la invitación y vuelve a iniciar sesión. "
+                    "El propietario de la app también necesita Spotify Premium en Development mode."
+                ),
+            ) from exc
+        if getattr(exc, "http_status", None) == 401:
+            raise HTTPException(
+                status_code=401,
+                detail="La sesión de Spotify expiró. Vuelve a iniciar sesión y acepta los permisos solicitados.",
+            ) from exc
         raise HTTPException(
             status_code=502,
             detail="Spotify rechazó la carga de tu biblioteca. Vuelve a iniciar sesión y acepta el permiso para leer tu biblioteca.",
