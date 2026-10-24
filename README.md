@@ -93,6 +93,8 @@ uvicorn api:app --host 0.0.0.0 --port $PORT
 
 En la pantalla de semillas puedes recorrer tu biblioteca guardada o buscar canciones en todo Spotify. El reproductor integrado de Spotify permite escuchar las pistas disponibles mientras eliges; su disponibilidad y duración dependen de Spotify y de tu cuenta.
 
+La biblioteca y el progreso de selección de cada usuario se mantienen separados por su token de sesión. En el plan actual, el estado se guarda en memoria en la instancia del backend y se reinicia cuando Render reinicia o redepliega el servicio.
+
 > ⚠️ **Importante**: Obtén credenciales nuevas de Spotify en https://developer.spotify.com/dashboard
 > Las credenciales que tenías en el .env anterior estaban expuestas — debes regenerarlas.
 

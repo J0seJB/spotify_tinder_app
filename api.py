@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 import os, sys, logging, secrets
+import hashlib
+import threading
+from contextvars import ContextVar
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlencode, quote, urlsplit
 import requests
@@ -22,12 +25,66 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Spotify Tinder API", version="1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-_cache: Dict[str, Any] = {
-    "sp_user": None, "track_meta": {}, "artists_by_id": {},
-    "all_liked_ids": [], "suggestions": [], "shown_ids": set(),
-    "approved_ids": set(), "approved_signals": {}, "rejected_signals": {},
-    "final_approved": [], "seed_ids": [], "loaded": False,
-}
+def _new_session_cache() -> Dict[str, Any]:
+    return {
+        "sp_user": None, "track_meta": {}, "artists_by_id": {},
+        "all_liked_ids": [], "suggestions": [], "shown_ids": set(),
+        "approved_ids": set(), "approved_signals": {}, "rejected_signals": {},
+        "final_approved": [], "seed_ids": [], "loaded": False,
+    }
+
+
+_anonymous_cache = _new_session_cache()
+_session_caches: Dict[str, Dict[str, Any]] = {}
+_session_caches_lock = threading.Lock()
+_current_cache: ContextVar[Optional[Dict[str, Any]]] = ContextVar("spotify_tinder_cache", default=None)
+
+
+def _cache_for_access_token(access_token: str) -> Dict[str, Any]:
+    session_key = hashlib.sha256(access_token.encode("utf-8")).hexdigest()
+    with _session_caches_lock:
+        return _session_caches.setdefault(session_key, _new_session_cache())
+
+
+def _active_cache() -> Dict[str, Any]:
+    return _current_cache.get() or _anonymous_cache
+
+
+class _SessionCacheProxy:
+    def __getitem__(self, key):
+        return _active_cache()[key]
+
+    def __setitem__(self, key, value):
+        _active_cache()[key] = value
+
+    def get(self, key, default=None):
+        return _active_cache().get(key, default)
+
+    def update(self, values):
+        _active_cache().update(values)
+
+    def clear(self):
+        _active_cache().clear()
+
+    def copy(self):
+        return _active_cache().copy()
+
+
+_cache = _SessionCacheProxy()
+
+
+@app.middleware("http")
+async def isolate_user_session(request: Request, call_next):
+    authorization = request.headers.get("authorization", "")
+    access_token = None
+    if authorization.lower().startswith("bearer "):
+        access_token = authorization.split(" ", 1)[1].strip()
+    cache = _cache_for_access_token(access_token) if access_token else _anonymous_cache
+    context_token = _current_cache.set(cache)
+    try:
+        return await call_next(request)
+    finally:
+        _current_cache.reset(context_token)
 
 class SelectSeedRequest(BaseModel):
     track_ids: List[str]
@@ -61,7 +118,7 @@ def _ensure_loaded(limit=None, access_token: Optional[str] = None):
     """
     if _cache["loaded"]:
         if access_token:
-            if _cache.get("loaded_auth_mode") == "user" and _cache.get("loaded_access_token") == access_token:
+            if _cache.get("loaded_auth_mode") == "user":
                 return
         elif _cache.get("loaded_auth_mode") == "app":
             return
@@ -74,7 +131,6 @@ def _ensure_loaded(limit=None, access_token: Optional[str] = None):
             sp_user = spotipy.Spotify(auth=access_token, requests_timeout=20, retries=3)
             _cache["sp_user"] = sp_user
             loaded_auth_mode = "user"
-            loaded_access_token = access_token
             logger.info("Cargando biblioteca Spotify del usuario autenticado...")
             liked_items = fetch_all_liked(sp_user, limit=limit, raise_on_error=True)
             artists_by_id = {}
@@ -83,7 +139,6 @@ def _ensure_loaded(limit=None, access_token: Optional[str] = None):
             sp_app = get_app_client()
             _cache["sp_user"] = sp_user
             loaded_auth_mode = "app"
-            loaded_access_token = None
             logger.info("Cargando Me Gusta...")
             liked_items = fetch_all_liked(sp_user, limit=limit)
             all_artist_ids = []
@@ -99,7 +154,6 @@ def _ensure_loaded(limit=None, access_token: Optional[str] = None):
         _cache["all_liked_ids"] = list(track_meta.keys())
         _cache["loaded"] = True
         _cache["loaded_auth_mode"] = loaded_auth_mode
-        _cache["loaded_access_token"] = loaded_access_token
         logger.info(f"Cargadas {len(track_meta)} canciones.")
     except Exception as e:
         if access_token:
@@ -111,7 +165,6 @@ def _ensure_loaded(limit=None, access_token: Optional[str] = None):
         _cache["all_liked_ids"] = []
         _cache["loaded"] = True
         _cache["loaded_auth_mode"] = "app"
-        _cache["loaded_access_token"] = None
 
 
 @app.get("/login")

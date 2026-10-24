@@ -1,7 +1,7 @@
 import spotipy
 from fastapi.testclient import TestClient
 
-from api import _cache, app
+from api import _cache, _cache_for_access_token, app
 
 
 client = TestClient(app)
@@ -70,6 +70,22 @@ def test_library_search_matches_saved_track_names_and_artists():
 def test_spotify_catalog_search_caches_tracks_as_possible_seeds(monkeypatch):
     original = _with_cache_state()
     try:
+        cache = _cache_for_access_token("user-token")
+        cache.clear()
+        cache.update({
+            "sp_user": None,
+            "track_meta": {},
+            "artists_by_id": {},
+            "all_liked_ids": [],
+            "suggestions": [],
+            "shown_ids": set(),
+            "approved_ids": set(),
+            "approved_signals": {},
+            "rejected_signals": {},
+            "final_approved": [],
+            "seed_ids": [],
+            "loaded": True,
+        })
         class FakeSpotify:
             def __init__(self, **kwargs):
                 assert kwargs["auth"] == "user-token"
@@ -97,9 +113,9 @@ def test_spotify_catalog_search_caches_tracks_as_possible_seeds(monkeypatch):
         assert response.status_code == 200
         assert response.json()["results"][0]["id"] == "catalog-track"
         assert response.json()["results"][0]["in_library"] is False
-        assert _cache["track_meta"]["catalog-track"]["uri"] == "spotify:track:catalog-track"
-        assert _cache["track_meta"]["catalog-track"]["image_url"] == "https://images.example/cover.jpg"
-        assert _cache["artists_by_id"]["artist-1"]["name"] == "Artist One"
+        assert cache["track_meta"]["catalog-track"]["uri"] == "spotify:track:catalog-track"
+        assert cache["track_meta"]["catalog-track"]["image_url"] == "https://images.example/cover.jpg"
+        assert cache["artists_by_id"]["artist-1"]["name"] == "Artist One"
     finally:
         _cache.clear()
         _cache.update(original)

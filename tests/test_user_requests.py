@@ -1,15 +1,16 @@
 import spotipy
 from fastapi.testclient import TestClient
 
-from api import _cache, app
+from api import _cache_for_access_token, app
 
 
 client = TestClient(app)
 
 
-def _save_cache():
-    original = _cache.copy()
-    _cache.update({
+def _save_cache(access_token="friend-access-token"):
+    cache = _cache_for_access_token(access_token)
+    original = cache.copy()
+    cache.update({
         "sp_user": None,
         "track_meta": {},
         "artists_by_id": {},
@@ -23,11 +24,11 @@ def _save_cache():
         "seed_ids": [],
         "loaded": False,
     })
-    return original
+    return cache, original
 
 
 def test_load_uses_the_authenticated_users_token_without_app_credentials(monkeypatch):
-    original = _save_cache()
+    cache, original = _save_cache()
     try:
         class FakeSpotify:
             def __init__(self, **kwargs):
@@ -53,15 +54,15 @@ def test_load_uses_the_authenticated_users_token_without_app_credentials(monkeyp
 
         assert response.status_code == 200
         assert response.json() == {"ok": True, "total": 1}
-        assert _cache["track_meta"]["friend-track"]["name"] == "Friend song"
-        assert _cache["loaded_auth_mode"] == "user"
+        assert cache["track_meta"]["friend-track"]["name"] == "Friend song"
+        assert cache["loaded_auth_mode"] == "user"
     finally:
-        _cache.clear()
-        _cache.update(original)
+        cache.clear()
+        cache.update(original)
 
 
 def test_load_returns_actionable_error_for_unexpected_library_failure(monkeypatch):
-    original = _save_cache()
+    cache, original = _save_cache()
     try:
         class FakeSpotify:
             def __init__(self, **kwargs):
@@ -83,12 +84,12 @@ def test_load_returns_actionable_error_for_unexpected_library_failure(monkeypatc
         assert response.status_code == 502
         assert "Vuelve a iniciar sesión" in response.json()["detail"]
     finally:
-        _cache.clear()
-        _cache.update(original)
+        cache.clear()
+        cache.update(original)
 
 
 def test_load_explains_spotify_development_allowlist_for_forbidden_user(monkeypatch):
-    original = _save_cache()
+    cache, original = _save_cache()
     try:
         class FakeSpotify:
             def __init__(self, **kwargs):
@@ -111,15 +112,15 @@ def test_load_explains_spotify_development_allowlist_for_forbidden_user(monkeypa
         assert "Users Management" in response.json()["detail"]
         assert "Spotify Premium" in response.json()["detail"]
     finally:
-        _cache.clear()
-        _cache.update(original)
+        cache.clear()
+        cache.update(original)
 
 
 def test_playlist_creation_uses_requesting_users_token(monkeypatch):
-    original = _save_cache()
+    cache, original = _save_cache()
     calls = []
     try:
-        _cache.update({
+        cache.update({
             "final_approved": ["friend-track"],
             "track_meta": {
                 "friend-track": {"uri": "spotify:track:friend-track"}
@@ -162,5 +163,5 @@ def test_playlist_creation_uses_requesting_users_token(monkeypatch):
             ("add", "playlist-1", ["spotify:track:friend-track"]),
         ]
     finally:
-        _cache.clear()
-        _cache.update(original)
+        cache.clear()
+        cache.update(original)
