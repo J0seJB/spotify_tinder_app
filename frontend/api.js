@@ -52,6 +52,7 @@ export function login() {
 }
 
 export const API = {
+  login,
   async load(limit = 3452) {
     const r = await fetch(`${BASE_URL}/load?limit=${limit}`, {
       method: "POST",
