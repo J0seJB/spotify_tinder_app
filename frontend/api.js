@@ -65,7 +65,15 @@ export const API = {
     return r.json();
   },
   async search(q) {
-    const r = await fetch(`${BASE_URL}/search?q=${encodeURIComponent(q)}`, { headers: authHeaders() });
+    const r = await fetch(`${BASE_URL}/search?q=${encodeURIComponent(q)}&source=library`, { headers: authHeaders() });
+    return r.json();
+  },
+  async searchSpotify(q) {
+    const r = await fetch(`${BASE_URL}/search?q=${encodeURIComponent(q)}&source=spotify`, { headers: authHeaders() });
+    return r.json();
+  },
+  async library(offset = 0, limit = 50) {
+    const r = await fetch(`${BASE_URL}/library?offset=${offset}&limit=${limit}`, { headers: authHeaders() });
     return r.json();
   },
   async setSeeds(trackIds) {

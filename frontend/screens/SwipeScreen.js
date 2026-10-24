@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { API } from "../api";
+import SpotifyPlayer from "../components/SpotifyPlayer";
 
 const { width: W, height: H } = Dimensions.get("window");
 const SWIPE_THRESHOLD = W * 0.35;
@@ -137,11 +138,6 @@ export default function SwipeScreen({ navigation }) {
             <Text style={styles.cardTitle} numberOfLines={2}>{card.name}</Text>
             <Text style={styles.cardArtist} numberOfLines={1}>{card.artists}</Text>
             {card.album ? <Text style={styles.cardAlbum} numberOfLines={1}>{card.album}</Text> : null}
-            {false && card.preview_url && (
-              <TouchableOpacity style={styles.previewBtn} onPress={togglePreview}>
-                <Text style={styles.previewBtnText}>{playing ? "⏸ Pausar" : "▶ Preview"}</Text>
-              </TouchableOpacity>
-            )}
           </LinearGradient>
 
           {/* Overlays LIKE / NOPE */}
@@ -152,6 +148,10 @@ export default function SwipeScreen({ navigation }) {
             <Text style={styles.badgeText}>NOPE</Text>
           </Animated.View>
         </Animated.View>
+      </View>
+
+      <View style={styles.player}>
+        <SpotifyPlayer trackId={card.id} />
       </View>
 
       {/* Botones */}
@@ -194,12 +194,7 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 26, fontWeight: "800", color: "#fff", lineHeight: 32 },
   cardArtist: { fontSize: 16, color: "#ccc", marginTop: 4 },
   cardAlbum: { fontSize: 13, color: "#888", marginTop: 2 },
-  previewBtn: {
-    marginTop: 12, backgroundColor: "rgba(29,185,84,0.25)",
-    borderColor: "#1DB954", borderWidth: 1,
-    borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, alignSelf: "flex-start",
-  },
-  previewBtnText: { color: "#1DB954", fontWeight: "700", fontSize: 13 },
+  player: { width: "100%", paddingHorizontal: 16, paddingBottom: 4 },
   badge: {
     position: "absolute", top: 40, paddingHorizontal: 16, paddingVertical: 8,
     borderWidth: 3, borderRadius: 8,

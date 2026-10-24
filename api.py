@@ -32,6 +32,7 @@ _cache: Dict[str, Any] = {
 class SelectSeedRequest(BaseModel):
     track_ids: List[str]
 
+
 class FeedbackRequest(BaseModel):
     approved: List[str]
     rejected: List[str]
@@ -256,6 +257,9 @@ def _rescore(suggestions):
     return rescored
 
 def _get_track_details(tid: str):
+    meta = _cache["track_meta"].get(tid, {})
+    if meta.get("image_url") or meta.get("preview_url") or meta.get("album_name"):
+        return meta.get("image_url"), meta.get("preview_url"), meta.get("album_name", "")
     try:
         sp = _get_sp()
         track = sp.track(tid)
@@ -263,6 +267,11 @@ def _get_track_details(tid: str):
         image_url = images[0]["url"] if images else None
         preview_url = track.get("preview_url")
         album_name = track.get("album", {}).get("name", "")
+        meta.update({
+            "image_url": image_url,
+            "preview_url": preview_url,
+            "album_name": album_name,
+        })
         return image_url, preview_url, album_name
     except Exception:
         return None, None, ""
@@ -280,23 +289,112 @@ def status():
         "approved": len(_cache["final_approved"]),
     }
 
-@app.get("/search")
-def search_tracks(q: str):
+@app.get("/library")
+def get_library(offset: int = 0, limit: int = 50):
     if not _cache["loaded"]:
         raise HTTPException(status_code=400, detail="Primero llama /load")
+    if offset < 0 or limit < 1 or limit > 100:
+        raise HTTPException(status_code=400, detail="Paginación inválida.")
+    ids = _cache["all_liked_ids"][offset:offset + limit]
+    return {
+        "results": [_library_track(tid) for tid in ids],
+        "offset": offset,
+        "limit": limit,
+        "total": len(_cache["all_liked_ids"]),
+    }
+
+
+def _library_track(tid: str) -> Dict[str, Any]:
+    meta = _cache["track_meta"].get(tid, {})
+    return {
+        "id": tid,
+        "name": meta.get("name", ""),
+        "artists": meta.get("artists", ""),
+        "image_url": meta.get("image_url"),
+        "preview_url": meta.get("preview_url"),
+        "in_library": True,
+    }
+
+
+@app.get("/search")
+def search_tracks(q: str, source: str = "library", authorization: Optional[str] = Header(None)):
+    if not _cache["loaded"]:
+        raise HTTPException(status_code=400, detail="Primero llama /load")
+    if len(q.strip()) < 2:
+        return {"results": []}
+
     q_lower = q.lower()
+    if source == "library":
+        results = []
+        for tid in _cache["all_liked_ids"]:
+            meta = _cache["track_meta"].get(tid, {})
+            if q_lower in meta.get("name", "").lower() or q_lower in meta.get("artists", "").lower():
+                results.append(_library_track(tid))
+            if len(results) >= 30:
+                break
+        return {"results": results}
+    if source != "spotify":
+        raise HTTPException(status_code=400, detail="Origen de búsqueda inválido.")
+
+    access_token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        access_token = authorization.split(" ", 1)[1].strip()
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Inicia sesión con Spotify para buscar canciones.")
+
+    try:
+        import spotipy
+        sp = spotipy.Spotify(auth=access_token, requests_timeout=20, retries=2)
+        response = sp.search(q=q.strip(), type="track", limit=20)
+    except Exception as exc:
+        logger.exception("Spotify catalog search failed")
+        raise HTTPException(status_code=502, detail="No se pudo buscar en Spotify. Inténtalo de nuevo.") from exc
+
     results = []
-    for tid, meta in _cache["track_meta"].items():
-        if q_lower in meta.get("name", "").lower() or q_lower in meta.get("artists", "").lower():
-            results.append({"id": tid, "name": meta.get("name", ""), "artists": meta.get("artists", "")})
-        if len(results) >= 10:
-            break
+    for track in response.get("tracks", {}).get("items", []):
+        track_id = track.get("id")
+        if not track_id:
+            continue
+        artist_objects = track.get("artists", []) or []
+        artist_ids = [artist.get("id") for artist in artist_objects if artist.get("id")]
+        album = track.get("album", {}) or {}
+        images = album.get("images", []) or []
+        meta = {
+            "name": track.get("name", ""),
+            "uri": track.get("uri", f"spotify:track:{track_id}"),
+            "artists": "; ".join(artist.get("name", "") for artist in artist_objects if artist.get("name")),
+            "artist_ids": artist_ids,
+            "genres": [],
+            "album_name": album.get("name", ""),
+            "image_url": images[0].get("url") if images else None,
+            "preview_url": track.get("preview_url"),
+        }
+        _cache["track_meta"][track_id] = meta
+        for artist in artist_objects:
+            if artist.get("id"):
+                _cache["artists_by_id"].setdefault(
+                    artist["id"],
+                    {"name": artist.get("name", ""), "genres": []},
+                )
+        results.append({
+            "id": track_id,
+            "name": meta["name"],
+            "artists": meta["artists"],
+            "image_url": meta["image_url"],
+            "preview_url": meta["preview_url"],
+            "in_library": track_id in _cache["all_liked_ids"],
+        })
     return {"results": results}
 
 @app.post("/seeds")
 def set_seeds(req: SelectSeedRequest):
     if not _cache["loaded"]:
         raise HTTPException(status_code=400, detail="Primero llama /load")
+    if not req.track_ids:
+        raise HTTPException(status_code=400, detail="Selecciona al menos una canción semilla.")
+    missing_ids = [track_id for track_id in req.track_ids if track_id not in _cache["track_meta"]]
+    if missing_ids:
+        raise HTTPException(status_code=400, detail="Busca las canciones semilla antes de seleccionarlas.")
     try:
         from ai_playlist import suggest_from_seeds
         _cache["seed_ids"] = req.track_ids

@@ -73,7 +73,7 @@ El backend usa `render.yaml` y `requirements-web.txt` para desplegar únicamente
   - `SPOTIFY_REDIRECT_URI=https://<TU_SERVICIO>.onrender.com/callback`
   - `FRONTEND_URL=https://<TU_DOMINIO_VERCEL>` (incluye `https://`, sin rutas ni fragmentos)
 3. Añade exactamente `SPOTIFY_REDIRECT_URI` a la lista **Redirect URIs** de tu aplicación en Spotify Developer Dashboard y guarda los cambios.
-4. En Vercel, conserva el frontend y configura `BACKEND_URL=https://<TU_SERVICIO>.onrender.com`; luego vuelve a desplegar el frontend.
+4. En Vercel, conserva el frontend y configura `EXPO_PUBLIC_BACKEND_URL=https://<TU_SERVICIO>.onrender.com`; luego vuelve a desplegar el frontend.
 
 En Vercel, el comando de build es:
 
@@ -90,6 +90,8 @@ uvicorn api:app --host 0.0.0.0 --port $PORT
 ```
 
 > El plan gratuito de Render puede suspender el backend tras un periodo sin tráfico; la primera solicitud posterior puede tardar alrededor de un minuto. No uses el sistema de archivos local del servicio para guardar datos permanentes.
+
+En la pantalla de semillas puedes recorrer tu biblioteca guardada o buscar canciones en todo Spotify. El reproductor integrado de Spotify permite escuchar las pistas disponibles mientras eliges; su disponibilidad y duración dependen de Spotify y de tu cuenta.
 
 > ⚠️ **Importante**: Obtén credenciales nuevas de Spotify en https://developer.spotify.com/dashboard
 > Las credenciales que tenías en el .env anterior estaban expuestas — debes regenerarlas.
